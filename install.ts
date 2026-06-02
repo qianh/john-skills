@@ -6,7 +6,7 @@ const REPO_ROOT = resolve(process.cwd());
 const HOME = homedir();
 const CC_PLUGINS_JSON = join(HOME, ".claude/plugins/installed_plugins.json");
 const CODEX_JOHN_SYMLINK = join(HOME, ".codex/john");
-const PLUGIN_KEY = "john@local";
+const PLUGIN_KEY = "john@john";
 
 const args = process.argv.slice(2);
 const unregister = args.includes("--unregister");
