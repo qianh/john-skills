@@ -1,6 +1,6 @@
 ---
 name: wechat-cli
-description: 微信聊天记录查询与分析工具，基于本地 wechat-cli（v0.2.4）。触发条件：用户查询微信消息、聊天记录、联系人、群成员、收藏、统计分析、导出聊天记录，或需要获取微信新消息、未读消息时使用。支持关键词搜索、时间范围过滤、多种格式导出。USE WHEN: 查微信, 微信聊天记录, 微信联系人, 微信群, 导出微信, 微信搜索, wechat, WeChat messages, chat history, wechat contacts, wechat stats, new messages.
+description: "微信聊天记录查询与分析工具，基于本地 wechat-cli（v0.2.4）。触发条件：用户查询微信消息、聊天记录、联系人、群成员、收藏、统计分析、导出聊天记录，或需要获取微信新消息、未读消息时使用。支持关键词搜索、时间范围过滤、多种格式导出。USE WHEN: 查微信, 微信聊天记录, 微信联系人, 微信群, 导出微信, 微信搜索, wechat, WeChat messages, chat history, wechat contacts, wechat stats, new messages."
 ---
 
 # WeChat CLI 微信命令行工具

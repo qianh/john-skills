@@ -34,7 +34,12 @@ john-skills/
 /plugin install john@john-skills
 ```
 
-**Codex** — coming soon.
+**Codex** — install via marketplace (no git clone needed):
+
+```bash
+codex plugin marketplace add qianh/john-skills
+codex plugin add john@john-skills
+```
 
 **Local development** (after cloning):
 
