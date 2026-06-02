@@ -1,15 +1,12 @@
-import { existsSync, lstatSync, mkdirSync, symlinkSync, unlinkSync, readdirSync } from "fs";
-import { join, resolve, dirname } from "path";
+import { existsSync, lstatSync, symlinkSync, unlinkSync, readdirSync } from "fs";
+import { join, resolve } from "path";
 import { homedir } from "os";
 
 const REPO_ROOT = resolve(process.cwd());
 const HOME = homedir();
-const CC_PLUGINS_JSON = join(HOME, ".claude/plugins/installed_plugins.json");
+// Claude Code loads plugins from ~/.claude/skills/<name>/ as <name>@skills-dir (official local mechanism)
+const CC_SKILLS_SYMLINK = join(HOME, ".claude/skills/john");
 const CODEX_JOHN_SYMLINK = join(HOME, ".codex/john");
-const PLUGIN_KEY = "john@john";
-// Claude Code only loads plugins whose installPath is within the cache directory.
-// We create a symlink inside the cache that points back to REPO_ROOT (dev mode).
-const CC_CACHE_SYMLINK = join(HOME, ".claude/plugins/cache/john/john/1.0.0");
 
 const args = process.argv.slice(2);
 const unregister = args.includes("--unregister");
@@ -26,55 +23,30 @@ try {
   process.exit(1);
 }
 
-async function readPlugins(): Promise<Record<string, unknown[]>> {
-  if (!existsSync(CC_PLUGINS_JSON)) {
-    return { version: 2, plugins: {} } as unknown as Record<string, unknown[]>;
-  }
-  return JSON.parse(await Bun.file(CC_PLUGINS_JSON).text());
+function symlinkEntry(path: string): boolean {
+  try { lstatSync(path); return true; } catch { return false; }
 }
 
 async function doInstall() {
-  // 0. Pre-flight: verify skills/ exists before mutating any external state
+  // Pre-flight: verify skills/ exists before mutating any external state
   const skillsDir = join(REPO_ROOT, "skills");
   if (!existsSync(skillsDir)) {
     throw new Error(`skills/ directory not found at ${skillsDir} — is REPO_ROOT correct?`);
   }
 
-  // 1. Claude Code registration
-  // Create cache-path symlink → REPO_ROOT so installPath matches the cache pattern CC expects
-  const cacheSymlinkExists = (() => { try { lstatSync(CC_CACHE_SYMLINK); return true; } catch { return false; } })();
-  if (cacheSymlinkExists) {
-    if (!dryRun) unlinkSync(CC_CACHE_SYMLINK);
+  // 1. Claude Code: ~/.claude/skills/john/ → REPO_ROOT  (loads as john@skills-dir)
+  if (symlinkEntry(CC_SKILLS_SYMLINK)) {
+    if (!dryRun) unlinkSync(CC_SKILLS_SYMLINK);
   }
   if (!dryRun) {
-    mkdirSync(dirname(CC_CACHE_SYMLINK), { recursive: true });
-    symlinkSync(REPO_ROOT, CC_CACHE_SYMLINK);
+    symlinkSync(REPO_ROOT, CC_SKILLS_SYMLINK);
   }
+  console.log(`✅ Claude Code: ${dryRun ? "[DRY RUN] would create" : "created"} ~/.claude/skills/john → ${REPO_ROOT}`);
+  console.log(`   loads as: john@skills-dir`);
 
-  const ccPlugins = await readPlugins() as { version: number; plugins: Record<string, unknown[]> };
-  ccPlugins.plugins ??= {};
-  const now = new Date().toISOString();
-  const existing = (ccPlugins.plugins[PLUGIN_KEY] as { installedAt?: string }[])?.[0];
-  ccPlugins.plugins[PLUGIN_KEY] = [{
-    scope: "user",
-    installPath: CC_CACHE_SYMLINK,
-    version: "1.0.0",
-    installedAt: existing?.installedAt ?? now,
-    lastUpdated: now,
-  }];
-  if (!dryRun) {
-    await Bun.write(CC_PLUGINS_JSON, JSON.stringify(ccPlugins, null, 2));
-  }
-  console.log(`✅ Claude Code: ${dryRun ? "[DRY RUN] would register" : "registered"} ${PLUGIN_KEY}`);
-  console.log(`   cache → ${CC_CACHE_SYMLINK} → ${REPO_ROOT}`);
-
-  // 2. Codex symlink — use lstatSync to detect dangling symlinks that existsSync misses
-  const symlinkExists = (() => {
-    try { lstatSync(CODEX_JOHN_SYMLINK); return true; } catch { return false; }
-  })();
-  if (symlinkExists) {
+  // 2. Codex: ~/.codex/john/ → REPO_ROOT
+  if (symlinkEntry(CODEX_JOHN_SYMLINK)) {
     if (!dryRun) unlinkSync(CODEX_JOHN_SYMLINK);
-    if (!dryRun) console.log(`  (removed existing ~/.codex/john)`);
   }
   if (!dryRun) {
     symlinkSync(REPO_ROOT, CODEX_JOHN_SYMLINK);
@@ -91,29 +63,16 @@ async function doInstall() {
 }
 
 async function doUninstall() {
-  // Remove from Claude Code
-  const ccPlugins = await readPlugins() as { plugins: Record<string, unknown[]> };
-  ccPlugins.plugins ??= {};
-  if (ccPlugins.plugins[PLUGIN_KEY]) {
-    delete ccPlugins.plugins[PLUGIN_KEY];
-    if (!dryRun) await Bun.write(CC_PLUGINS_JSON, JSON.stringify(ccPlugins, null, 2));
-    console.log(`✅ Claude Code: ${dryRun ? "[DRY RUN] would remove" : "removed"} ${PLUGIN_KEY}`);
+  // Remove Claude Code symlink
+  if (symlinkEntry(CC_SKILLS_SYMLINK)) {
+    if (!dryRun) unlinkSync(CC_SKILLS_SYMLINK);
+    console.log(`✅ Claude Code: ${dryRun ? "[DRY RUN] would remove" : "removed"} ~/.claude/skills/john`);
   } else {
-    console.log(`ℹ️  Claude Code: ${PLUGIN_KEY} was not registered`);
+    console.log(`ℹ️  Claude Code: ~/.claude/skills/john did not exist`);
   }
 
-  // Remove cache symlink
-  const cacheSymlinkExists = (() => { try { lstatSync(CC_CACHE_SYMLINK); return true; } catch { return false; } })();
-  if (cacheSymlinkExists) {
-    if (!dryRun) unlinkSync(CC_CACHE_SYMLINK);
-    console.log(`✅ Cache symlink: ${dryRun ? "[DRY RUN] would remove" : "removed"} ${CC_CACHE_SYMLINK}`);
-  }
-
-  // Remove Codex symlink — use lstatSync to catch dangling symlinks
-  const symlinkExists = (() => {
-    try { lstatSync(CODEX_JOHN_SYMLINK); return true; } catch { return false; }
-  })();
-  if (symlinkExists) {
+  // Remove Codex symlink
+  if (symlinkEntry(CODEX_JOHN_SYMLINK)) {
     if (!dryRun) unlinkSync(CODEX_JOHN_SYMLINK);
     console.log(`✅ Codex: ${dryRun ? "[DRY RUN] would remove" : "removed"} ~/.codex/john`);
   } else {
