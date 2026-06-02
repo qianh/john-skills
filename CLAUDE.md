@@ -29,21 +29,21 @@ john-skills/
 Register the plugin locally (run once after cloning):
 
 ```bash
-bun run install-plugin.ts   # or: node install-plugin.js
+bun install.ts
 ```
 
-This script adds an entry to `~/.claude/plugins/installed_plugins.json` pointing `installPath` at this repo directory, under the key `john@local`.
+Creates two symlinks:
+- `~/.claude/skills/john/` → this repo  (Claude Code's built-in `skills-dir` local plugin mechanism, loads as `john@skills-dir`)
+- `~/.codex/john/` → this repo
+
+Restart Claude Code and Codex after running. Skills appear as `john:john`, `john:kb`, etc.
+
+To unregister: `bun install.ts --unregister`
 
 Manual equivalent:
-```json
-// in ~/.claude/plugins/installed_plugins.json, add inside "plugins":
-"john@local": [{
-  "scope": "user",
-  "installPath": "/Users/hong/John/ai/john-skills",
-  "version": "local",
-  "installedAt": "<ISO timestamp>",
-  "lastUpdated": "<ISO timestamp>"
-}]
+```bash
+ln -s /path/to/john-skills ~/.claude/skills/john
+ln -s /path/to/john-skills ~/.codex/john
 ```
 
 After installation, restart Claude Code. Skills appear as `john:john`, `john:kb`, etc.
