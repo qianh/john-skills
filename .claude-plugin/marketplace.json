@@ -1,0 +1,21 @@
+{
+  "name": "john-skills",
+  "owner": {
+    "name": "钱宏"
+  },
+  "metadata": {
+    "description": "John's personal skill bundle for Claude Code + Codex"
+  },
+  "plugins": [
+    {
+      "name": "john",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/qianh/john-skills.git"
+      },
+      "description": "Personal skill bundle: context loader, KB agent, spec orchestrator, WeChat CLI, music downloader, mydata profiler, git commit helper",
+      "version": "1.0.0",
+      "strict": true
+    }
+  ]
+}

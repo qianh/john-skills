@@ -1,16 +1,13 @@
 # john-skills
 
-Personal Claude Code + Codex skill plugin. Provides `john:` namespaced skills.
+Personal Claude Code skill plugin. Provides `john:` namespaced skills.
 
-## Install
+## Install (Claude Code)
 
 ```bash
-bun install.ts
+/plugin marketplace add qianh/john-skills
+/plugin install john@john-skills
 ```
-
-Registers the plugin on both Claude Code and Codex. Restart both tools after running.
-
-To unregister: `bun install.ts --unregister`
 
 ## Skills
 

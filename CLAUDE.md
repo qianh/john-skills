@@ -11,7 +11,8 @@ A private Claude Code **plugin package** that exposes personal skills under the 
 ```
 john-skills/
 ├── .claude-plugin/
-│   └── plugin.json        # Plugin metadata (name: "john", version, description)
+│   ├── plugin.json        # Plugin metadata (name: "john", version, description)
+│   └── marketplace.json   # Marketplace manifest — makes this repo self-distributable
 ├── package.json            # name: "john" (drives the skill namespace prefix)
 ├── skills/
 │   ├── john/SKILL.md       # Personal context loader
@@ -26,33 +27,29 @@ john-skills/
 
 ## Installation
 
-Register the plugin locally (run once after cloning):
+**Claude Code** — install via marketplace (no git clone needed):
+
+```bash
+/plugin marketplace add qianh/john-skills
+/plugin install john@john-skills
+```
+
+**Codex** — coming soon.
+
+**Local development** (after cloning):
 
 ```bash
 bun install.ts
 ```
 
-Creates two symlinks:
-- `~/.claude/skills/john/` → this repo  (Claude Code's built-in `skills-dir` local plugin mechanism, loads as `john@skills-dir`)
-- `~/.codex/john/` → this repo
-
-Restart Claude Code and Codex after running. Skills appear as `john:john`, `john:kb`, etc.
-
+Creates `~/.claude/skills/john/` → this repo symlink (loads as `john@skills-dir`).
 To unregister: `bun install.ts --unregister`
-
-Manual equivalent:
-```bash
-ln -s /path/to/john-skills ~/.claude/skills/john
-ln -s /path/to/john-skills ~/.codex/john
-```
-
-After installation, restart Claude Code. Skills appear as `john:john`, `john:kb`, etc.
 
 ## Adding or Updating Skills
 
 1. Create (or copy) `skills/<skill-name>/SKILL.md` — the frontmatter `name:` must match the directory name.
 2. Copy any supporting files (scripts, assets, references) into `skills/<skill-name>/`.
-3. No rebuild or reinstall needed — Claude Code reads skills from `installPath` at session start.
+3. No rebuild needed — Claude Code reads skills from `installPath` at session start.
 
 ## Skill Frontmatter
 
