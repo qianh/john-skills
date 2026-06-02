@@ -1,4 +1,4 @@
-import { existsSync, lstatSync, symlinkSync, unlinkSync, readdirSync } from "fs";
+import { existsSync, lstatSync, mkdirSync, symlinkSync, unlinkSync, readdirSync } from "fs";
 import { join, resolve, dirname } from "path";
 import { homedir } from "os";
 
@@ -7,6 +7,9 @@ const HOME = homedir();
 const CC_PLUGINS_JSON = join(HOME, ".claude/plugins/installed_plugins.json");
 const CODEX_JOHN_SYMLINK = join(HOME, ".codex/john");
 const PLUGIN_KEY = "john@john";
+// Claude Code only loads plugins whose installPath is within the cache directory.
+// We create a symlink inside the cache that points back to REPO_ROOT (dev mode).
+const CC_CACHE_SYMLINK = join(HOME, ".claude/plugins/cache/john/john/1.0.0");
 
 const args = process.argv.slice(2);
 const unregister = args.includes("--unregister");
@@ -38,21 +41,32 @@ async function doInstall() {
   }
 
   // 1. Claude Code registration
+  // Create cache-path symlink → REPO_ROOT so installPath matches the cache pattern CC expects
+  const cacheSymlinkExists = (() => { try { lstatSync(CC_CACHE_SYMLINK); return true; } catch { return false; } })();
+  if (cacheSymlinkExists) {
+    if (!dryRun) unlinkSync(CC_CACHE_SYMLINK);
+  }
+  if (!dryRun) {
+    mkdirSync(dirname(CC_CACHE_SYMLINK), { recursive: true });
+    symlinkSync(REPO_ROOT, CC_CACHE_SYMLINK);
+  }
+
   const ccPlugins = await readPlugins() as { version: number; plugins: Record<string, unknown[]> };
   ccPlugins.plugins ??= {};
   const now = new Date().toISOString();
   const existing = (ccPlugins.plugins[PLUGIN_KEY] as { installedAt?: string }[])?.[0];
   ccPlugins.plugins[PLUGIN_KEY] = [{
     scope: "user",
-    installPath: REPO_ROOT,
-    version: "local",
+    installPath: CC_CACHE_SYMLINK,
+    version: "1.0.0",
     installedAt: existing?.installedAt ?? now,
     lastUpdated: now,
   }];
   if (!dryRun) {
     await Bun.write(CC_PLUGINS_JSON, JSON.stringify(ccPlugins, null, 2));
   }
-  console.log(`✅ Claude Code: ${dryRun ? "[DRY RUN] would register" : "registered"} ${PLUGIN_KEY} → ${REPO_ROOT}`);
+  console.log(`✅ Claude Code: ${dryRun ? "[DRY RUN] would register" : "registered"} ${PLUGIN_KEY}`);
+  console.log(`   cache → ${CC_CACHE_SYMLINK} → ${REPO_ROOT}`);
 
   // 2. Codex symlink — use lstatSync to detect dangling symlinks that existsSync misses
   const symlinkExists = (() => {
@@ -86,6 +100,13 @@ async function doUninstall() {
     console.log(`✅ Claude Code: ${dryRun ? "[DRY RUN] would remove" : "removed"} ${PLUGIN_KEY}`);
   } else {
     console.log(`ℹ️  Claude Code: ${PLUGIN_KEY} was not registered`);
+  }
+
+  // Remove cache symlink
+  const cacheSymlinkExists = (() => { try { lstatSync(CC_CACHE_SYMLINK); return true; } catch { return false; } })();
+  if (cacheSymlinkExists) {
+    if (!dryRun) unlinkSync(CC_CACHE_SYMLINK);
+    console.log(`✅ Cache symlink: ${dryRun ? "[DRY RUN] would remove" : "removed"} ${CC_CACHE_SYMLINK}`);
   }
 
   // Remove Codex symlink — use lstatSync to catch dangling symlinks
