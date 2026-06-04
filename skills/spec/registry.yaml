@@ -126,7 +126,7 @@ nodes:
 
   N4_tasks:
     stage: 任务拆解
-    flavor_rule: "任务≤5→writing-plans；任务>5或多worktree→Taskmaster；issue tracker 化→to-issues"
+    flavor_rule: "默认→writing-plans；仅用户明确要求时→Taskmaster；issue tracker 化→to-issues"
     produces: [tasks（大则裂变 tasks.md）]
     exit_gate: 任务可单测单审
     missing_policy: install_or_adjust_plan
@@ -142,7 +142,7 @@ nodes:
       - { env: claude-code, kind: skill, name: "superpowers:writing-plans", install: missing-skill }
       - { env: codex, kind: skill, name: planning-with-files, install: missing-skill }
       - { env: codex, kind: skill, name: writing-plans, install: missing-skill }
-      - { env: any, kind: tool, name: taskmaster, condition: "任务>5或多worktree", install: taskmaster }
+      - { env: any, kind: tool, name: taskmaster, condition: "仅用户明确要求使用 Taskmaster 时", install: taskmaster }
       - { env: claude-code, kind: skill, name: to-issues, condition: "拆成 issue tracker 条目", auxiliary: true, install: missing-skill }
 
   N5_implement:

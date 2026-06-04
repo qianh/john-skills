@@ -36,7 +36,7 @@
 | NS Scope | 老项目强制；派 subagent：CC=`Explore` / Codex=`codebase-analyzer`；扫关联前后端/服务/API/配置/DB/Apollo/回调链，结果写 spec.md；无关联服务则 N/A |
 | N1 拷问 | 有码库→`grill-with-docs`；无码库→`grill-me` |
 | N3 规格 | 规模 L/M→OpenSpec 工具；规模 H/新项目→Spec Kit / `sdd-development`（**`sdd-development` 仅 Codex；在 Claude Code 无 sdd 时，OpenSpec 作 env:any 主绑定承接全规模含 H**）；风险 H→对抗审查，支持 subagent/当前 agent 选择 |
-| N4 拆解 | 任务≤5→Superpowers plan / `writing-plans`；任务>5 或多 worktree→Taskmaster；支持 subagent/当前 agent 选择 |
+| N4 拆解 | 默认→Superpowers plan / `writing-plans`；仅当用户明确要求时→Taskmaster；支持 subagent/当前 agent 选择 |
 | N5 实现 | 默认 Superpowers TDD + worktree；风险 H→TDD Guard；多独立任务时支持 subagent/当前 agent 选择 |
 | N7 审查 | 默认 code-review / `requesting-code-review`；风险 H→对抗审查；支持 subagent/当前 agent 选择 |
 
@@ -52,5 +52,5 @@
 |---|---|---|
 | 小 bug（规模L/风险L/老/清晰） | NS → N1轻 → N5 → N6 | 4 |
 | 中功能（规模M/风险M/老/清晰） | NS → N1 → N3(OpenSpec) → N4 → N5 → N6 → N7 | 7 |
-| 新产品（规模H/风险M/新/模糊） | N0 → N1(grill-me) → N2 → N3(Spec Kit) → N4(Taskmaster) → N5 → N6 → N7 → N8 | 9 |
+| 新产品（规模H/风险M/新/模糊） | N0 → N1(grill-me) → N2 → N3(Spec Kit) → N4(writing-plans) → N5 → N6 → N7 → N8 | 9 |
 | 高风险（规模M-H/风险H/老/清晰） | NS + 全节点 + 对抗审查 + TDD Guard + subagent 选择闸 + 追溯矩阵 + 合并前人批 | 10+ |
