@@ -50,6 +50,12 @@ bun install.ts
 Creates `~/.claude/skills/john/` → this repo symlink (loads as `john@skills-dir`).
 To unregister: `bun install.ts --unregister`
 
+**Update** (pull latest + refresh):
+
+```bash
+bun update.ts
+```
+
 ## Adding or Updating Skills
 
 1. Create (or copy) `skills/<skill-name>/SKILL.md` — the frontmatter `name:` must match the directory name.
