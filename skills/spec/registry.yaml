@@ -16,6 +16,21 @@ execution_modes:
   - current-agent
   - subagent
 
+# ── 模型分层（Advisor/Executor 角色固定，执行器映射在 executor_model_map）──
+model_tiers:
+  advisor:         tier_high   # 分析/规格/审查节点
+  executor:        tier_mid    # 实现节点
+  executor_risk_H: tier_high   # 风险H时 executor 升格与 advisor 同级
+
+executor_model_map:
+  claude-code:
+    tier_high: opus
+    tier_mid:  sonnet
+  codex:
+    tier_high: o3
+    tier_mid:  gpt-4o-mini
+  # 新执行器：在此追加一个 block，SKILL.md 逻辑无需改动
+
 installables:
   openspec:
     type: tool
@@ -50,7 +65,19 @@ nodes:
   NS_scope_discovery:
     stage: 跨服务/跨仓范围发现
     # 老项目强制：当前仓常只是功能的一部分，必须先发现关联前后端/服务，否则 spec 只覆盖半边。
-    # 由真实执行器（agent 子代理）完成，编排器不自扫。
+    # NS-A（Recon）由 advisor 自读；NS-B（Scope）派子代理执行。
+    sub_steps:
+      NS_A_recon:
+        label: 意图侦察（Recon）
+        model_tier: advisor
+        reads: [README, "CLAUDE.md/AGENTS.md", CONTEXT.md, DESIGN.md, PRODUCT.md, "ADR/", git-log-30]
+        produces: [项目意图与约束章节]
+        executor: current-agent   # advisor 自读，不派子代理
+      NS_B_scope:
+        label: 跨服务范围发现（Scope）
+        model_tier: advisor
+        produces: [涉及服务/仓清单]
+        executor: subagent        # 派 Explore agent（原逻辑）
     produces: [涉及服务/仓清单, 关联 API/配置/DB/Apollo/回调链, 各服务改动面]
     exit_gate: 跨栈范围界定并经用户确认（greenfield 无既有服务标 N/A）
     missing_policy: install_or_adjust_plan
@@ -126,9 +153,13 @@ nodes:
 
   N4_tasks:
     stage: 任务拆解
+    model_tier: flexible
+    executor_model:
+      default: tier_high        # 跟随 advisor；规格清晰时可在 Gate 1 降
+      when_spec_clear: tier_mid
     flavor_rule: "默认→writing-plans；仅用户明确要求时→Taskmaster；issue tracker 化→to-issues"
     produces: [tasks（大则裂变 tasks.md）]
-    exit_gate: 任务可单测单审
+    exit_gate: 每个任务含文件路径+摘录/scope边界/验证命令+期望输出/Done标准/逃生口
     missing_policy: install_or_adjust_plan
     subagent:
       supported: true
@@ -147,6 +178,10 @@ nodes:
 
   N5_implement:
     stage: 实现
+    model_tier: executor
+    executor_model:
+      default: tier_mid         # 廉价模型执行实现
+      risk_H: tier_high         # 风险H时升格，防止实现偷懒
     flavor_rule: "默认 TDD + worktree；风险H→TDD Guard；多独立任务可选 subagent（executing-plans/subagent-driven-development）"
     produces: [实现+测试, 状态]
     exit_gate: 红绿重构走完
@@ -190,7 +225,7 @@ nodes:
     stage: 审查
     flavor_rule: "默认 code-review / requesting-code-review；风险H→对抗审查"
     produces: [审查记录]
-    exit_gate: 关键闸·审查
+    exit_gate: 关键闸·审查（每条finding已vet，by-design/误归因/重复已过滤，附核实证据）
     missing_policy: install_or_adjust_plan
     subagent:
       supported: true

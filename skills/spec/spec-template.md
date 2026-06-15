@@ -16,12 +16,19 @@ flavors: { N1: grill-with-docs, N3: openspec|sdd-development, N7: code-review }
 execution_modes: { N3: subagent, N7: current-agent }
 deps_check: { grill-with-docs: ok, taskmaster: "missing→install_required" }
 status: drafting        # drafting → spec-locked → implementing → reviewing → done
+spec_commit: ""         # N3 定稿时写入（git rev-parse --short HEAD），用于续跑漂移检测
 created: <YYYY-MM-DD>
 ---
 
 # <feature> · Spec
 
-## 涉及服务 / 跨仓范围        <!-- NS，老项目强制；greenfield 标 N/A -->
+## 项目意图与约束         <!-- NS-A Recon，老项目强制；greenfield 标 N/A -->
+- 已决策 ADR（不再讨论的方向）：
+- 活跃演进方向（git log 近 30 条推断）：
+- 不可违背的约束（build/test/lint 命令 + 已知技术债）：
+- Recon 读取的意图文档：
+
+## 涉及服务 / 跨仓范围        <!-- NS-B Scope，老项目强制；greenfield 标 N/A -->
 - 当前项目：<前端 / 后端 / 服务 / 库 + 路径>
 - 关联服务 / 仓（角色 + 本功能改动面）：
   - <服务A>：
@@ -49,7 +56,18 @@ created: <YYYY-MM-DD>
 - 单元 / 集成 / E2E / 手工验收：
 
 ## 任务拆解                <!-- N4，大任务 → 裂变 tasks.md -->
-- [ ] T-001 …
+
+<!-- 每个任务必须包含以下 5 项，缺任意一项不得进入 N5 -->
+### T-001 · <任务标题>
+**为何做：** <影响和上下文，≤2句>
+**文件路径：** `src/xxx.ts:42-67`（附当前代码摘录，≤15行）
+**scope 边界：** in-scope: [文件A, 文件B] | out-of-scope: [不能碰的文件]
+**有序步骤：**
+  1. 做 X → 验证命令: `<命令>` → 期望输出: `<期望>`
+  2. 做 Y → ...
+**Done 标准（可机器执行）：** `<验证命令>`
+**测试计划：** 新测试放 `tests/xxx.spec.ts`，参照 `tests/bar.spec.ts` 的写法
+**逃生口：** 若遇到 <X 情况>，STOP 并上报，不得自行发挥
 
 ## 实现与测试记录          <!-- N5 -->
 

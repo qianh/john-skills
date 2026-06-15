@@ -1,5 +1,19 @@
 # 四维评分 + 编排矩阵
 
+## 0. branch 模式覆写规则
+
+触发 `/spec branch` 时，以下规则**覆盖**标准矩阵（第1-5节），优先级最高：
+
+| 规则 | 值 |
+|---|---|
+| 规模上限 | 锁定 M（增量分析，即使 diff 很大也不升 H） |
+| NS 替换 | diff-scan（`git diff main --name-only` + 涉及文件快速读），跳过跨服务发现和 NS-A Recon |
+| N1 风味 | 固定 grill-with-docs（无论新老项目） |
+| N8 | 必选（所有 finding 标注 `introduced` 本分支引入 / `pre-existing` 原有问题） |
+| 其余节点 | 按标准矩阵升级规则，但规模上限 M 生效 |
+
+---
+
 本文是引擎的"大脑"：先给请求四维打分，再用矩阵推出节点集与风味。**智能在评分、确定在组装**——同一张矩阵对不同项目吐出不同流程，这就是"动态而非写死"。
 
 ## 1. 四维评分 rubric
@@ -28,6 +42,7 @@
 | 领域清晰度 = 模糊 | +N2 |
 | 老项目 | **+NS（跨服务/跨仓发现，强制，派 subagent：CC=Explore / Codex=codebase-analyzer）** + N1=grill-with-docs + 扫码库；新项目 N1=grill-me（无既有服务则 NS=N/A） |
 | 风险 H | N3/N7 进入对抗审查模式 + N5 选 TDD Guard + N8 强制 + 追溯矩阵 + 合并前 Human Approval |
+| 风险 H | N5 executor_model 从 tier_mid 升为 tier_high（廉价 executor 升格与 advisor 同级） |
 
 ## 3. 风味选择规则（dim → flavor）
 
