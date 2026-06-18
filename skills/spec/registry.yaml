@@ -163,7 +163,7 @@ nodes:
       when_spec_clear: tier_mid
     flavor_rule: "默认→writing-plans；仅用户明确要求时→Taskmaster；issue tracker 化→to-issues"
     produces: [tasks（大则裂变 tasks.md）]
-    exit_gate: 每个任务含文件路径+摘录/scope边界/验证命令+期望输出/Done标准/逃生口
+    exit_gate: 每个任务含文件路径+摘录/scope边界/验证命令+期望输出/Done标准(启用/goal时须transcript-verifiable)/逃生口
     missing_policy: install_or_adjust_plan
     subagent:
       supported: true
@@ -184,7 +184,7 @@ nodes:
     stage: 实现
     goal_integration:
       opt_in: true            # Gate 1 询问用户是否启用 /goal；不强制
-      condition_source: N4_tasks.done_criteria   # 从 N4 Done 标准提炼
+      condition_source: "N4 任务拆解产出的 Done 标准字段（advisor 人工提炼，见 SKILL.md N5 /goal 集成步骤1）"  # 无机器可读字段，需人工从 N4 任务的 Done 标准逐条提炼
       evaluator:
         claude-code:
           type: external      # 独立评估器，执行者与裁判分离，质量保证更强
@@ -231,7 +231,7 @@ nodes:
         - spec_to_test:    "spec 验收标准 → N6 验证命令存在"
         - goal_condition:  "front-matter goal_condition 最终验收"
     produces: [验证记录(DoD)]
-    exit_gate: DoD 全绿（lint/typecheck/test/build）
+    exit_gate: DoD 全绿（lint/typecheck/test/build）+ goal_condition 成立（非空时必须验证）+ 意图覆盖率追踪完整
     missing_policy: install_or_adjust_plan
     subagent:
       supported: false
