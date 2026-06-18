@@ -153,6 +153,10 @@ nodes:
 
   N4_tasks:
     stage: 任务拆解
+    done_criteria_requirement: transcript_verifiable
+    # Done 标准必须 transcript-verifiable：验证命令将在 N5 中被执行并打印到对话；
+    # Claude Code /goal 评估器（Haiku）只读 transcript，不能独立调工具。
+    # 不可写语义判断类条件（"实现符合设计原则"）。
     model_tier: flexible
     executor_model:
       default: tier_high        # 跟随 advisor；规格清晰时可在 Gate 1 降
@@ -178,6 +182,18 @@ nodes:
 
   N5_implement:
     stage: 实现
+    goal_integration:
+      opt_in: true            # Gate 1 询问用户是否启用 /goal；不强制
+      condition_source: N4_tasks.done_criteria   # 从 N4 Done 标准提炼
+      evaluator:
+        claude-code:
+          type: external      # 独立评估器，执行者与裁判分离，质量保证更强
+          model: haiku        # 默认；可通过 Stop hook 替换为 sonnet/opus 或脚本
+          reads: transcript_only  # 不调工具，只读对话记录
+          customizable: true
+        codex:
+          type: self_evaluating   # Codex 自身判断完成，无独立裁判
+          note: "自我评估偏乐观；条件须更加明确可量化"
     model_tier: executor
     executor_model:
       default: tier_mid         # 廉价模型执行实现
@@ -207,6 +223,13 @@ nodes:
 
   N6_verify:
     stage: 验证
+    coverage_accounting:
+      required: true
+      cheapest_first_order: [unit_tests, lint, typecheck, build, goal_condition]
+      checks:
+        - intent_to_spec:  "N1 逼出意图 → spec 章节存在"
+        - spec_to_test:    "spec 验收标准 → N6 验证命令存在"
+        - goal_condition:  "front-matter goal_condition 最终验收"
     produces: [验证记录(DoD)]
     exit_gate: DoD 全绿（lint/typecheck/test/build）
     missing_policy: install_or_adjust_plan
