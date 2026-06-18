@@ -10,6 +10,7 @@
 | NS 替换 | diff-scan（`git diff main --name-only` + 涉及文件快速读），跳过跨服务发现和 NS-A Recon |
 | N1 风味 | 固定 grill-with-docs（无论新老项目） |
 | N8 | 必选（所有 finding 标注 `introduced` 本分支引入 / `pre-existing` 原有问题） |
+| N4/N5 | 跳过（branch 针对已存在 diff，不做任务拆解与实现；改由 N3 记录改动、N7 审查、N6 验证现有 diff） |
 | 其余节点 | 按标准矩阵升级规则，但规模上限 M 生效 |
 
 ---
@@ -37,8 +38,8 @@
 
 | 触发条件 | 加挂 |
 |---|---|
-| 规模 ≥ M | +N3 +N4 +N7（→ 经典 6 节点） |
-| 规模 H 或 新项目 | +N0 +N3 重档(Spec Kit) + spec 裂变附件 |
+| 规模 ≥ M | +N3 +N4 +N7（→ 经典 6 节点；N7 插在 N5 后、N6 前） |
+| 规模 H 或 新项目 | +N0 +N3 重档(Codex=sdd-development / CC=OpenSpec 承全规模含 H) + spec 裂变附件 + N8 归档 |
 | 领域清晰度 = 模糊 | +N2 |
 | 老项目 | **+NS（跨服务/跨仓发现，强制，派 subagent：CC=Explore / Codex=codebase-analyzer）** + N1=grill-with-docs + 扫码库；新项目 N1=grill-me（无既有服务则 NS=N/A） |
 | 风险 H | N3/N7 进入对抗审查模式 + N5 选 TDD Guard + N8 强制 + 追溯矩阵 + 合并前 Human Approval |
@@ -50,7 +51,7 @@
 |---|---|
 | NS Scope | 老项目强制；派 subagent：CC=`Explore` / Codex=`codebase-analyzer`；扫关联前后端/服务/API/配置/DB/Apollo/回调链，结果写 spec.md；无关联服务则 N/A |
 | N1 拷问 | 有码库→`grill-with-docs`；无码库→`grill-me` |
-| N3 规格 | 规模 L/M→OpenSpec 工具；规模 H/新项目→Spec Kit / `sdd-development`（**`sdd-development` 仅 Codex；在 Claude Code 无 sdd 时，OpenSpec 作 env:any 主绑定承接全规模含 H**）；风险 H→对抗审查，支持 subagent/当前 agent 选择 |
+| N3 规格 | 规模 L/M→OpenSpec 工具；规模 H/新项目→`sdd-development`(**仅 Codex**)；**Claude Code 无 sdd 时，OpenSpec 作 env:any 主绑定承接全规模含 H**；风险 H→对抗审查，支持 subagent/当前 agent 选择 |
 | N4 拆解 | 默认→Superpowers plan / `writing-plans`；仅当用户明确要求时→Taskmaster；支持 subagent/当前 agent 选择 |
 | N5 实现 | 默认 Superpowers TDD + worktree；风险 H→TDD Guard；多独立任务时支持 subagent/当前 agent 选择 |
 | N7 审查 | 默认 code-review / `requesting-code-review`；风险 H→对抗审查；支持 subagent/当前 agent 选择 |
@@ -66,6 +67,6 @@
 | 场景（四维） | 编排出的流程 | 节点数 |
 |---|---|---|
 | 小 bug（规模L/风险L/老/清晰） | NS → N1轻 → N5 → N6 | 4 |
-| 中功能（规模M/风险M/老/清晰） | NS → N1 → N3(OpenSpec) → N4 → N5 → N6 → N7 | 7 |
-| 新产品（规模H/风险M/新/模糊） | N0 → N1(grill-me) → N2 → N3(Spec Kit) → N4(writing-plans) → N5 → N6 → N7 → N8 | 9 |
-| 高风险（规模M-H/风险H/老/清晰） | NS + 全节点 + 对抗审查 + TDD Guard + subagent 选择闸 + 追溯矩阵 + 合并前人批 | 10+ |
+| 中功能（规模M/风险M/老/清晰） | NS → N1 → N3(OpenSpec) → N4 → N5 → N7 → N6 | 7 |
+| 新产品（规模H/风险M/新/模糊） | N0 → N1(grill-me) → N2 → N3(OpenSpec/sdd) → N4(writing-plans) → N5 → N7 → N6 → N8 | 9 |
+| 高风险（规模H/风险H/老/模糊） | NS + 全节点(N0…N8 含 N2) + 对抗审查 + TDD Guard + subagent 选择闸 + 追溯矩阵 + 合并前人批 | 10 |

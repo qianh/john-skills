@@ -3,7 +3,7 @@
 `registry.yaml` 是这套框架吸收"跨执行器命令名差异"的地方。**SKILL.md 正文不写死任何命令名**，一律来这里查。
 
 ## 为什么这样设计
-同一个 Spec 操作，在 Claude Code 和 Codex 里的技能名不同（例如拆解：CC 是 `superpowers:writing-plans`，Codex 侧是 `planning-with-files`）。若把命令名写进正文，就无法跨执行器共享同一份逻辑。**把差异关进数据层（registry），正文保持执行器无关。**
+同一个 Spec 操作，在 Claude Code 和 Codex 里的技能名不同（例如拆解：CC 是 `superpowers:writing-plans`，Codex 侧首选 `planning-with-files`、备选 `writing-plans`）。若把命令名写进正文，就无法跨执行器共享同一份逻辑。**把差异关进数据层（registry），正文保持执行器无关。**
 
 ## 运行时怎么解析
 1. **认环境**：读环境变量 `CLAUDECODE`——存在 → `claude-code`；否则 → `codex`。
@@ -27,3 +27,7 @@
 - `flavor_rule`: 该节点按维度选风味的规则（与 `matrix.md` §3 一致）
 - `install`: 缺失时对应的安装项；具体核实和安装步骤见 `references/install.md`
 - `subagent`: 该节点是否支持 subagent、推荐角色、用户选择要求，以及是否允许 native current-agent / native subagent
+- `goal_condition_sync_required`: 节点出口门是否必须同步 front-matter `goal_condition`
+- `goal_integration.ask_timing`: `/goal` opt-in 的询问节点；当前只允许 N5 前、N4 后
+- `invalidates_on_rerun`: 节点重跑后必须作废并重跑的后续节点
+- `requires_after_last_run`: 当前节点通过前，指定节点必须晚于最近一次实现运行

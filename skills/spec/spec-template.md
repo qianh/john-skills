@@ -11,13 +11,15 @@
 feature: <slug>
 executor: claude-code | codex
 scores:  { 规模: M, 风险: H, 项目: 老, 领域清晰度: 清晰 }
-nodes:   [N1, N3, N4, N5, N6, N7]
+nodes:   [N1, N3, N4, N5, N7, N6]
 flavors: { N1: grill-with-docs, N3: openspec|sdd-development, N7: code-review }
 execution_modes: { N3: subagent, N7: current-agent }
 deps_check: { grill-with-docs: ok, taskmaster: "missing→install_required" }
 status: drafting        # drafting → spec-locked → implementing → reviewing → done
 spec_commit: ""         # N3 定稿时写入（git rev-parse --short HEAD），用于续跑漂移检测
 goal_condition: ""      # Step 0 提炼：「当[可验证命令输出]为真时本次工作完成」；必须 transcript-verifiable；N6 最终验收准则
+goal_condition_waived: false  # 仅用户明确选择无法提供可验证目标时改 true；N5/N6 必须记录原因
+goal_condition_waiver_reason: ""
 created: <YYYY-MM-DD>
 ---
 
@@ -73,6 +75,8 @@ created: <YYYY-MM-DD>
 
 ## 实现与测试记录          <!-- N5 -->
 
+## 审查记录                <!-- N7 -->
+
 ## 验证记录（DoD）         <!-- N6 -->
 
 <!-- cheapest-first 顺序：单测 → lint → typecheck → build → goal_condition -->
@@ -88,8 +92,6 @@ created: <YYYY-MM-DD>
 ## 需求追溯矩阵            <!-- 仅风险 H；→ 裂变 traceability.md -->
 | Requirement | Spec | Task | Test | Status |
 |---|---|---|---|---|
-
-## 审查记录                <!-- N7 -->
 
 ## 决策与归档（ADR）       <!-- N8 -->
 - 为何这么设计 / 哪些方案被否 / 新增领域词 / 改了哪些边界 / 遗留 TODO：
