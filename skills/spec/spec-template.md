@@ -17,6 +17,7 @@ execution_modes: { N3: subagent, N7: current-agent }
 deps_check: { grill-with-docs: ok, taskmaster: "missing→install_required" }
 status: drafting        # drafting → spec-locked → implementing → reviewing → done
 spec_commit: ""         # N3 定稿时写入（git rev-parse --short HEAD），用于续跑漂移检测
+goal_condition: ""      # Step 0 提炼：「当[可验证命令输出]为真时本次工作完成」；必须 transcript-verifiable；N6 最终验收准则
 created: <YYYY-MM-DD>
 ---
 
@@ -65,15 +66,24 @@ created: <YYYY-MM-DD>
 **有序步骤：**
   1. 做 X → 验证命令: `<命令>` → 期望输出: `<期望>`
   2. 做 Y → ...
-**Done 标准（可机器执行）：** `<验证命令>`
+**Done 标准（可机器执行 + transcript-verifiable）：** `<验证命令>` → 期望输出: `<期望文本>`
+<!-- transcript-verifiable：命令须在 N5 执行中被打印；/goal 评估器（Haiku）只读 transcript，不能独立调工具 -->
 **测试计划：** 新测试放 `tests/xxx.spec.ts`，参照 `tests/bar.spec.ts` 的写法
 **逃生口：** 若遇到 <X 情况>，STOP 并上报，不得自行发挥
 
 ## 实现与测试记录          <!-- N5 -->
 
 ## 验证记录（DoD）         <!-- N6 -->
+
+<!-- cheapest-first 顺序：单测 → lint → typecheck → build → goal_condition -->
 - [ ] 所有测试通过  [ ] lint  [ ] typecheck  [ ] build
 - [ ] 新增逻辑有测试  [ ] 修改行为有回归  [ ] 无无关 diff  [ ] 无绕过测试
+- [ ] goal_condition 成立（最终验收，见 front-matter）
+
+### 意图覆盖率追踪        <!-- N6 coverage accounting -->
+| 意图（N1 逼出） | spec 章节 | 实现任务 | N6 验证命令 + 期望输出 | 状态 |
+|---|---|---|---|---|
+| <意图1> | <章节> | <T-00x> | `<命令>` → `<期望>` | ⬜/✅ |
 
 ## 需求追溯矩阵            <!-- 仅风险 H；→ 裂变 traceability.md -->
 | Requirement | Spec | Task | Test | Status |
