@@ -148,15 +148,32 @@ NS 拆为两个子步，顺序执行；greenfield 项目 NS-B 标 N/A，NS-A 仍
    - `⑤ 模型注入（N5 专属）`：派发 N5 子代理时，从 `registry.yaml` 的 `executor_model_map[当前执行器]` 取模型名：风险 L/M 用 `tier_mid`，风险 H 用 `tier_high`。注入 Agent 工具的 `model` 参数。**advisor（当前 agent）不执行 N5 实现**，只在 N7 读取 executor 产出的 diff 进行审查。
 2. **写章节**：把框架产物写进 `spec.md` 该节点负责的章节（见 `spec-template.md`）。
 3. **过出口门**：校验该节点出口门（N1 意图被逼出、N6 DoD 全绿……）；不过则不进下一节点。N1 未过**禁止**进 N3/N5（铁律 6）。
-   > **N4 出口门校验（mandatory）：** 逐条检查每个任务条目是否包含 5 项：① 文件路径+代码摘录 ② scope 边界（in/out-of-scope）③ 验证命令+期望输出 ④ Done 标准（可机器执行）⑤ 逃生口。缺任意一项则要求框架补充，**不得进入 N5**。格式参照 `spec-template.md` 的「任务拆解」章节。
+   > **N4 出口门校验（mandatory）：** 逐条检查每个任务条目是否包含 5 项：① 文件路径+代码摘录 ② scope 边界（in/out-of-scope）③ 验证命令+期望输出 ④ Done 标准（可机器执行 + **transcript-verifiable**：命令将在 N5 执行中被打印，供 /goal 评估器读取；不可写语义判断类条件）⑤ 逃生口。缺任意一项则要求框架补充，**不得进入 N5**。格式参照 `spec-template.md` 的「任务拆解」章节。
 4. 更新 `spec.md` front-matter 的 `status`。
 
 > **N5（实现）前必须**：AskUserQuestion 问 `subagent | 当前 agent`（铁律 7），再按所选模式委派 TDD 框架执行。
+
+> **N5 /goal 集成（可选，Gate 1 询问是否启用）：**
+> 1. 从 N4 每个任务的 Done 标准提炼出 /goal 条件字符串（需已满足 transcript-verifiable）
+> 2. N5 开始时执行：`/goal <条件字符串>`（最长 4000 字符，多任务可串联 `and`）
+> 3. 执行者专注写代码；评估器每轮判断条件是否满足：
+>    - **Claude Code**：独立 Haiku 模型读 transcript 判断（执行者与裁判分离，质量保证更强）；可通过 Stop hook 自定义替换 Haiku
+>    - **Codex**：自我评估（同一模型判断完成，无独立裁判；条件设计须更加明确可量化）
+> 4. 条件满足 → N5 自动退出；条件未满足 → 继续循环，Haiku 否定理由作为下轮指导
+> 5. ⚠️ N5 中必须将验证命令及其输出**打印到对话里**，评估器才能读到
+> 6. N6 接管时 /goal 已确认条件绿，但 N6 仍独立验证（cheapest-first：先跑单测）
+
+> **N6 coverage accounting（mandatory）：**
+> 1. **cheapest-first 顺序**：先单测（最快反馈）→ lint → typecheck → build → goal_condition 验收
+> 2. **意图覆盖率检查**：逐条核对 N1 逼出的每条真实意图 → 对应 spec 章节存在？→ 对应 N6 验证命令存在？填写 spec.md「意图覆盖率追踪」表
+> 3. **goal_condition 最终验收**：运行 front-matter `goal_condition` 指定的命令，输出与期望吻合则 N6 通过；否则重回 N5
 
 ### Gate 2 · 关键节点闸（硬 STOP）
 在以下节点完成时**停下，用 AskUserQuestion 请用户拍板**，不要连跑：
 - **N3 规格定稿**（spec 是后续一切的判据）
 - **N7 审查**（防偏航/过度设计/安全）
+  > **N7 clue-first 纪律**：每个 finding 必须先有定位证据（`文件:行号` + 相关代码摘录或测试输出），才能提出诊断。禁止「可能是X导致」类无定位猜测。先找线索，再下结论；线索不足则标记为「待核实」而非直接列入 finding。
+  >
   > **N7 Vet 规则（mandatory）：** reviewer 在呈现任何 finding 前，必须亲自重读被引用的文件位置（不得只看子代理报告）。过滤三类噪音：① by-design 行为（已有 ADR/spec 依据，对照 NS-A 读取的意图文档核查）② 误归因（正确 finding，错误文件/行）③ 重复 finding。过滤后的 finding 标注「已核实」方可写入审查记录；被过滤条目写入「considered and rejected」附注并附原因。
 - **合并前**（尤其风险 H：要 Human Approval）
 
