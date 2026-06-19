@@ -105,8 +105,8 @@ NS 拆为两个子步，顺序执行；greenfield 项目 NS-B 标 N/A，NS-A 仍
   1. session start 注入的 system-reminder `available skills` 列表（runtime 已聚合，首选）；
   2. 若需手动确认，按执行器分别检查：
      - **Claude Code**：`~/.claude/plugins/`（plugin 安装，如 `john:*`）**和** `~/.claude/skills/`（直装，如 `grill-with-docs`）；
-     - **Codex**：`~/.codex/plugins/`（plugin 安装）**和** `~/.codex/skills/`（直装）。
-     只查 plugins 会系统性地漏掉直装 skill，算体检失败。
+     - **Codex**：`~/.agents/skills/`（**Codex 规范的全局 skill 根**，直装 skill 如 `grill-with-docs`/`grill-me` 在此；其中的插件目录如 `superpowers/` 内部 skill 以**裸名**暴露，如 `writing-plans`/`test-driven-development`/`requesting-code-review`/`verification-before-completion`）、`~/.codex/skills/`（另一直装根）**和** `~/.codex/plugins/`（plugin 安装）。
+     只查 plugins、或只查 `~/.codex/skills/` 而漏掉 `~/.agents/skills/`，都会系统性地漏掉直装 skill，算体检失败。runtime 的 `available skills` 列表（来源①）已聚合全部根目录，是最终判据——它列出的 skill 即视为可用，不得因手动探某一目录没找到就判 `blocked`。
 - `current-agent` / `subagent` 是执行模式，不是依赖降级。只有节点显式声明 `native_*_allowed` 时，才允许不依赖框架直接由 agent 执行。
 - 推荐 `skill`/`tool`/`agent` 都不可用且用户未选允许的 native 模式时 → `blocked: install_required`，不得继续该节点。
 - Gate 1 只展示 N6 的 goal_condition（Step 0 初值或续跑当前值），不得把它当作 N5 `/goal` 条件。/goal 条件必须在 N5 前从 N4 Done 标准提炼；若本轮没有 N4，才使用 N1 同步后的 goal_condition。
