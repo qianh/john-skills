@@ -11,14 +11,14 @@
 feature: <slug>
 executor: claude-code | codex
 scores:  { 规模: M, 风险: H, 项目: 老, 领域清晰度: 清晰 }
-nodes:   [N1, N3, N4, N5, N7, N6]
-flavors: { N1: grill-with-docs, N3: openspec|sdd-development, N7: code-review }
-execution_modes: { N3: subagent, N7: current-agent }
+nodes:   [N1, N3, N4, N5, N6, N7]
+flavors: { N1: grill-with-docs, N3: openspec|sdd-development, N6: code-review }
+execution_modes: { N3: subagent, N6: current-agent }
 deps_check: { grill-with-docs: ok, taskmaster: "missing→install_required" }
 status: drafting        # drafting → spec-locked → implementing → reviewing → done
 spec_commit: ""         # N3 定稿时写入（git rev-parse --short HEAD），用于续跑漂移检测
-goal_condition: ""      # Step 0 提炼：「当[可验证命令输出]为真时本次工作完成」；必须 transcript-verifiable；N6 最终验收准则
-goal_condition_waived: false  # 仅用户明确选择无法提供可验证目标时改 true；N5/N6 必须记录原因
+goal_condition: ""      # Step 0 提炼：「当[可验证命令输出]为真时本次工作完成」；必须 transcript-verifiable；N7 最终验收准则
+goal_condition_waived: false  # 仅用户明确选择无法提供可验证目标时改 true；N5/N7 必须记录原因
 goal_condition_waiver_reason: ""
 created: <YYYY-MM-DD>
 ---
@@ -75,17 +75,17 @@ created: <YYYY-MM-DD>
 
 ## 实现与测试记录          <!-- N5 -->
 
-## 审查记录                <!-- N7 -->
+## 审查记录                <!-- N6 -->
 
-## 验证记录（DoD）         <!-- N6 -->
+## 验证记录（DoD）         <!-- N7 -->
 
 <!-- cheapest-first 顺序：单测 → lint → typecheck → build → goal_condition -->
 - [ ] 所有测试通过  [ ] lint  [ ] typecheck  [ ] build
 - [ ] 新增逻辑有测试  [ ] 修改行为有回归  [ ] 无无关 diff  [ ] 无绕过测试
 - [ ] goal_condition 成立（最终验收，见 front-matter）
 
-### 意图覆盖率追踪        <!-- N6 coverage accounting -->
-| 意图（N1 逼出） | spec 章节 | 实现任务 | N6 验证命令 + 期望输出 | 状态 |
+### 意图覆盖率追踪        <!-- N7 coverage accounting -->
+| 意图（N1 逼出） | spec 章节 | 实现任务 | N7 验证命令 + 期望输出 | 状态 |
 |---|---|---|---|---|
 | <意图1> | <章节> | <T-00x> | `<命令>` → `<期望>` | ⬜/✅ |
 

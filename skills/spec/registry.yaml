@@ -205,7 +205,7 @@ nodes:
     flavor_rule: "默认 TDD + worktree；风险H→TDD Guard；多独立任务可选 subagent（executing-plans/subagent-driven-development）"
     produces: [实现+测试, 状态]
     exit_gate: 红绿重构走完
-    invalidates_on_rerun: [N7_review, N6_verify]
+    invalidates_on_rerun: [N6_review, N7_verify]
     missing_policy: install_or_adjust_plan
     subagent:
       supported: true
@@ -226,23 +226,23 @@ nodes:
       - { env: claude-code, kind: skill, name: "superpowers:executing-plans", condition: "已有书面计划、分会话执行", auxiliary: true, install: missing-skill }
       - { env: claude-code, kind: skill, name: "superpowers:subagent-driven-development", condition: "独立任务派子代理执行", auxiliary: true, install: missing-skill }
 
-  N6_verify:
+  N7_verify:
     stage: 验证
     post_implementation_review:
-      when_selected: N7_review
-      requires_after_last_run: N7_review
+      when_selected: N6_review
+      requires_after_last_run: N6_review
     coverage_accounting:
       required: true
       cheapest_first_order: [unit_tests, lint, typecheck, build, goal_condition]
       checks:
         - intent_to_spec:  "N1 逼出意图 → spec 章节存在"
-        - spec_to_test:    "spec 验收标准 → N6 验证命令存在"
+        - spec_to_test:    "spec 验收标准 → N7 验证命令存在"
         - goal_condition:  "front-matter goal_condition 最终验收"
     produces: [验证记录(DoD)]
     exit_gate: DoD 全绿（lint/typecheck/test/build）+ goal_condition 成立（非空时必须验证）+ 意图覆盖率追踪完整
     failure_policy:
-      implementation_gap: 重跑 N5；若编排含 N7，则 N5 后必须重走 N7，再回 N6
-      spec_or_task_gap: 回退 N3/N4，重新定稿并刷新 spec_commit，再跑 N5/N7/N6
+      implementation_gap: 重跑 N5；若编排含 N6，则 N5 后必须重走 N6，再回 N7
+      spec_or_task_gap: 回退 N3/N4，重新定稿并刷新 spec_commit，再跑 N5/N6/N7
     missing_policy: install_or_adjust_plan
     subagent:
       supported: false
@@ -255,7 +255,7 @@ nodes:
       - { env: claude-code, kind: skill, name: verify, install: missing-skill }
       - { env: codex, kind: skill, name: verification-before-completion, install: missing-skill }
 
-  N7_review:
+  N6_review:
     stage: 审查
     flavor_rule: "默认 code-review / requesting-code-review；风险H→对抗审查"
     produces: [审查记录]

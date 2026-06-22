@@ -48,7 +48,7 @@
 已核实(2026-06-02)：repo github.com/nizos/tdd-guard，npm `tdd-guard`（亦有 Homebrew/PyPI）。安装 `npm install -g tdd-guard`，卸载 `npm uninstall -g tdd-guard` 并移除 hook 配置。**它是 Claude Code hook**，拦截 Write|Edit|MultiEdit；Codex 侧 hook 机制不同，安装前必须核实阻断在当前执行器是否真生效。安装后至少验证：
 - 失败测试能阻断进入实现；
 - 通过测试后允许继续；
-- 阻断日志可被记录进 spec 的 N5/N6 章节。
+- 阻断日志可被记录进 spec 的 N5/N7 章节。
 
 ## Missing Skill
 
