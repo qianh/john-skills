@@ -1,7 +1,7 @@
 {
   "name": "john",
   "description": "John's personal skill bundle: context loader, KB agent, spec orchestrator, WeChat CLI, music downloader, mydata profiler, git commit helper",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "author": {
     "name": "钱宏"
   },
