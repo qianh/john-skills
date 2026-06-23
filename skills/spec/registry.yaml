@@ -239,7 +239,7 @@ nodes:
         - spec_to_test:    "spec 验收标准 → N7 验证命令存在"
         - goal_condition:  "front-matter goal_condition 最终验收"
     produces: [验证记录(DoD)]
-    exit_gate: DoD 全绿（lint/typecheck/test/build）+ goal_condition 成立（非空时必须验证）+ 意图覆盖率追踪完整
+    exit_gate: DoD 全项已解决（✅通过 或 ⏭️BLOCKED+已豁免，不允许留空/❌未解决）+ goal_condition 成立（非空未豁免时必须验证）+ 意图覆盖率追踪完整
     failure_policy:
       implementation_gap: 重跑 N5；若编排含 N6，则 N5 后必须重走 N6，再回 N7
       spec_or_task_gap: 回退 N3/N4，重新定稿并刷新 spec_commit，再跑 N5/N6/N7
