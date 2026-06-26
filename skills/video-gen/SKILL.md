@@ -40,6 +40,8 @@ bash ~/.claude/skills/john/video-gen/scripts/generate.sh "a golden retriever run
 轮询中... (2/30)
 ✅ 生成完成！
 视频 URL: https://cdn.agnes-ai.com/videos/abc123.mp4
+下载中...
+已保存到: ~/Downloads/video_20260626_120000.mp4
 ```
 
 ## 时长预设

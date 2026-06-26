@@ -83,9 +83,14 @@ for i in $(seq 1 $MAX_POLLS); do
   case "$STATUS" in
     completed)
       VIDEO_URL=$(echo "$STATUS_RESP" | jq -r '.remixed_from_video_id // empty')
+      FILENAME="video_$(date +%Y%m%d_%H%M%S).mp4"
+      SAVE_PATH=~/Downloads/"$FILENAME"
       echo ""
       echo "✅ 生成完成！"
       echo "视频 URL: $VIDEO_URL"
+      echo "下载中..."
+      curl -sL "$VIDEO_URL" -o "$SAVE_PATH"
+      echo "已保存到: $SAVE_PATH"
       exit 0
       ;;
     failed)

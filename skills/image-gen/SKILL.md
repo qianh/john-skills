@@ -65,9 +65,14 @@ curl ... | jq -r '.data[0].url'
 
 1. 从用户消息提取图片描述，翻译为英文（模型对英文 prompt 效果更好）
 2. 检查 `$AGNES_API_KEY` 是否设置
-3. 执行上方 curl 命令
-4. 解析返回 URL，用 Markdown 图片语法展示：`![生成结果](URL)`
-5. 告知用户图片尺寸和描述
+3. 执行上方 curl 命令，提取 URL：`IMG_URL=$(curl ... | jq -r '.data[0].url')`
+4. 下载到本地 `~/Downloads/`：
+   ```bash
+   FILENAME="image_$(date +%Y%m%d_%H%M%S).png"
+   curl -sL "$IMG_URL" -o ~/Downloads/"$FILENAME"
+   ```
+5. 用 Markdown 图片语法展示本地路径：`![生成结果](~/Downloads/FILENAME)`
+6. 告知用户图片已保存到 `~/Downloads/FILENAME`，并说明尺寸和描述
 
 ## 错误处理
 
