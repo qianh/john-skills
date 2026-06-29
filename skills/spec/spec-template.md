@@ -12,8 +12,8 @@ feature: <slug>
 executor: claude-code | codex
 scores:  { 规模: M, 风险: H, 项目: 老, 领域清晰度: 清晰 }
 nodes:   [N1, N3, N4, N5, N6, N7]
-flavors: { N1: grill-with-docs, N3: openspec|sdd-development, N6: code-review }
-execution_modes: { N3: subagent, N6: current-agent }
+flavors: { N1: grill-with-docs, N3: openspec|sdd-development, N6: requesting-code-review|code-review, N7: verification-before-completion }
+execution_modes: { N3: subagent, N6: current-agent, N7: current-agent }
 deps_check: { grill-with-docs: ok, taskmaster: "missing→install_required" }
 status: drafting        # drafting → spec-locked → implementing → reviewing → done（done 条件见 SKILL.md Step 6）
 spec_commit: ""         # N3 定稿时写入（git rev-parse --short HEAD），用于续跑漂移检测

@@ -5,7 +5,32 @@ const files = {
   matrix: readFileSync("skills/spec/matrix.md", "utf8"),
   registry: readFileSync("skills/spec/registry.yaml", "utf8"),
   template: readFileSync("skills/spec/spec-template.md", "utf8"),
+  packageJson: readFileSync("package.json", "utf8"),
+  claudePlugin: readFileSync(".claude-plugin/plugin.json", "utf8"),
+  codexPlugin: readFileSync(".codex-plugin/plugin.json", "utf8"),
+  claudeMarketplace: readFileSync(".claude-plugin/marketplace.json", "utf8"),
 };
+
+const metadata = {
+  packageJson: JSON.parse(files.packageJson),
+  claudePlugin: JSON.parse(files.claudePlugin),
+  codexPlugin: JSON.parse(files.codexPlugin),
+  claudeMarketplace: JSON.parse(files.claudeMarketplace),
+};
+
+function appearsBefore(text, first, second) {
+  const firstIndex = text.indexOf(first);
+  const secondIndex = text.indexOf(second);
+  return firstIndex >= 0 && secondIndex >= 0 && firstIndex < secondIndex;
+}
+
+function lineMatching(text, pattern) {
+  return text.split("\n").find(line => pattern.test(line)) ?? "";
+}
+
+const templateFlavors = lineMatching(files.template, /^flavors:/);
+const canonicalVersion = metadata.claudePlugin.version;
+const specSkillVersion = files.skill.match(/^version:\s*([^\n]+)/m)?.[1]?.trim();
 
 const checks = [
   {
@@ -24,7 +49,7 @@ const checks = [
   {
     name: "Gate 1 does not claim to approve the N4-derived /goal condition",
     pass:
-      /Gate 1 只展示 N6 的 goal_condition/.test(files.skill) &&
+      /Gate 1 只展示 N7 的 goal_condition/.test(files.skill) &&
       /\/goal 条件必须在 N5 前从 N4/.test(files.skill),
   },
   {
@@ -40,24 +65,34 @@ const checks = [
       /goal_condition 为空且未被显式豁免/.test(files.skill),
   },
   {
-    name: "N5 reruns structurally invalidate N7 and N6",
+    name: "N5 reruns structurally invalidate review then verification",
     pass:
-      /invalidates_on_rerun:\s*\[N7_review,\s*N6_verify\]/.test(files.registry) &&
-      /requires_after_last_run:\s*N7_review/.test(files.registry),
+      /invalidates_on_rerun:\s*\[N6_review,\s*N7_verify\]/.test(files.registry) &&
+      /requires_after_last_run:\s*N6_review/.test(files.registry),
   },
   {
-    name: "N6 failure path distinguishes implementation rerun from spec/task reopen",
+    name: "N7 failure path distinguishes implementation rerun from spec/task reopen",
     pass:
       /实现未达标但 spec\/N4 仍有效/.test(files.skill) &&
       /spec 或 N4 任务需要变化/.test(files.skill) &&
       /重新写入 spec_commit/.test(files.skill),
   },
   {
-    name: "Flows with N7 run review before final N6 verification",
+    name: "Flows run N6 review before final N7 verification",
     pass:
-      /N5\s*→\s*N7\s*→\s*N6/.test(files.matrix) &&
-      /nodes:\s*\[N1,\s*N3,\s*N4,\s*N5,\s*N7,\s*N6\]/.test(files.template) &&
-      !/N5\s*→\s*N6\s*→\s*N7/.test(files.matrix),
+      /N5\s*→\s*N6\s*→\s*N7/.test(files.matrix) &&
+      /nodes:\s*\[N1,\s*N3,\s*N4,\s*N5,\s*N6,\s*N7\]/.test(files.template) &&
+      !/N5\s*→\s*N7\s*→\s*N6/.test(files.matrix),
+  },
+  {
+    name: "Registry lists N6_review before N7_verify for reader-safe execution",
+    pass: appearsBefore(files.registry, "N6_review:", "N7_verify:"),
+  },
+  {
+    name: "Template front-matter binds N6 review and N7 verification flavors",
+    pass:
+      /N6:\s*(requesting-code-review|code-review)/.test(templateFlavors) &&
+      /N7:\s*verification-before-completion/.test(templateFlavors),
   },
   {
     name: "Resume preserves existing goal_condition_waived front-matter",
@@ -68,8 +103,16 @@ const checks = [
   {
     name: "N5 skips /goal opt-in when no usable condition source exists",
     pass:
-      /条件来源为空或已被显式豁免/.test(files.skill) &&
+      /条件来源已显式豁免/.test(files.skill) &&
       /跳过 `\/goal` 启用询问/.test(files.skill),
+  },
+  {
+    name: "Claude Code, Codex, marketplace, package, and spec skill versions stay aligned",
+    pass:
+      metadata.packageJson.version === canonicalVersion &&
+      metadata.codexPlugin.version === canonicalVersion &&
+      specSkillVersion === canonicalVersion &&
+      metadata.claudeMarketplace.plugins.every(plugin => plugin.version === canonicalVersion),
   },
 ];
 

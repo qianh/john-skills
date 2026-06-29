@@ -226,6 +226,25 @@ nodes:
       - { env: claude-code, kind: skill, name: "superpowers:executing-plans", condition: "已有书面计划、分会话执行", auxiliary: true, install: missing-skill }
       - { env: claude-code, kind: skill, name: "superpowers:subagent-driven-development", condition: "独立任务派子代理执行", auxiliary: true, install: missing-skill }
 
+  N6_review:
+    stage: 审查
+    flavor_rule: "默认 code-review / requesting-code-review；风险H→对抗审查"
+    produces: [审查记录]
+    exit_gate: 关键闸·审查（每条finding已vet，by-design/误归因/重复已过滤，附核实证据）
+    missing_policy: install_or_adjust_plan
+    subagent:
+      supported: true
+      choice_required: true
+      role: explorer
+      use_when: "需要独立上下文审查 diff/spec，尤其是风险H或合并前"
+      current_agent_allowed: true
+      native_current_agent_allowed: true
+      native_subagent_allowed: true
+    invocations:
+      - { env: claude-code, kind: skill, name: "superpowers:requesting-code-review", install: missing-skill }
+      - { env: claude-code, kind: skill, name: code-review, install: missing-skill }
+      - { env: codex, kind: skill, name: requesting-code-review, install: missing-skill }
+
   N7_verify:
     stage: 验证
     post_implementation_review:
@@ -254,25 +273,6 @@ nodes:
       - { env: claude-code, kind: skill, name: "superpowers:verification-before-completion", install: missing-skill }
       - { env: claude-code, kind: skill, name: verify, install: missing-skill }
       - { env: codex, kind: skill, name: verification-before-completion, install: missing-skill }
-
-  N6_review:
-    stage: 审查
-    flavor_rule: "默认 code-review / requesting-code-review；风险H→对抗审查"
-    produces: [审查记录]
-    exit_gate: 关键闸·审查（每条finding已vet，by-design/误归因/重复已过滤，附核实证据）
-    missing_policy: install_or_adjust_plan
-    subagent:
-      supported: true
-      choice_required: true
-      role: explorer
-      use_when: "需要独立上下文审查 diff/spec，尤其是风险H或合并前"
-      current_agent_allowed: true
-      native_current_agent_allowed: true
-      native_subagent_allowed: true
-    invocations:
-      - { env: claude-code, kind: skill, name: "superpowers:requesting-code-review", install: missing-skill }
-      - { env: claude-code, kind: skill, name: code-review, install: missing-skill }
-      - { env: codex, kind: skill, name: requesting-code-review, install: missing-skill }
 
   N8_archive:
     stage: 归档
