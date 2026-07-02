@@ -1,6 +1,6 @@
 ---
 name: spec
-version: 1.1.5
+version: 1.1.6
 description: 动态 Spec 编排器：按四维给需求打分，用矩阵动态编排本次该跑哪些节点(琐碎3/典型6/高风险9+)，围绕一份 spec.md 推进、两道闸人控。当用户 /spec、说"写个 spec/规格驱动"、"帮我规划这个功能/需求/改动"，或要把需求做成可验收工程产物时触发。
 ---
 
@@ -166,6 +166,15 @@ NS 拆为两个子步，顺序执行；greenfield 项目 NS-B 标 N/A，NS-A 仍
 > 3. 条件来源非空 → 才询问是否启用 `/goal`（① 启用 ② 不启用）。
 >
 > 再按所选模式委派 TDD 框架执行。
+
+> **Worktree CodeGraph 初始化（mandatory，任何创建 worktree 的节点通用）：**
+> worktree 不会继承主仓的 `.codegraph/`（未被 git 跟踪）。进入 worktree 后、开始实质工作前，检测主仓是否已有 `.codegraph/`：
+> ```bash
+> MAIN_REPO=$(git -C "$(git rev-parse --git-common-dir)/.." rev-parse --show-toplevel 2>/dev/null)
+> [ -d "$MAIN_REPO/.codegraph" ] && ! [ -d .codegraph ] && codegraph init
+> ```
+> 条件：主仓有 `.codegraph/` 且当前 worktree 没有 → 执行 `codegraph init`（自动建索引+启 daemon）。
+> 不使用 symlink（daemon 竞争 SQLite + 分支内容可能不同）。
 
 > **N5 /goal 集成（可选，N5 前 AskUserQuestion 询问是否启用）：**
 > 1. 条件来源：
