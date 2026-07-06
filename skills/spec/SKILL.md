@@ -1,17 +1,17 @@
 ---
 name: spec
-version: 1.1.6
-description: 动态 Spec 编排器：按四维给需求打分，用矩阵动态编排本次该跑哪些节点(琐碎3/典型6/高风险9+)，围绕一份 spec.md 推进、两道闸人控。当用户 /spec、说"写个 spec/规格驱动"、"帮我规划这个功能/需求/改动"，或要把需求做成可验收工程产物时触发。
+version: 1.2.0
+description: 动态 Spec 编排器。当用户输入 /spec、/spec branch、/spec status、/spec iterate，说"写个 spec/规格驱动"、"帮我规划这个功能/需求/bug 修复/重构/改动"，或要把需求做成可验收的工程产物时触发。
 ---
 
 # Spec · 动态 Spec 编排器
 
 ## 核心理念（先读这段）
 
-这不是一条写死的流水线，**也不是让你自己理解需求然后直接动手**。它是一个**纯调度器**：读需求 → 跨服务范围发现 → 四维评分 → 矩阵当场编排出节点集 + 每节点风味 → **把每个环节委派给登记表里的真实框架/工具/子代理执行** → 全程围绕**一份活的 `spec.md`** 推进。
+这不是一条写死的流水线，**也不是让你自己理解需求然后直接动手**。它是一个**纯调度器**：读需求 → 跨服务范围发现 → 五维评分（任务类型 + 规模 + 风险 + 新老项目 + 领域清晰度）→ 矩阵当场编排出节点集 + 每节点风味 → **把每个环节委派给登记表里的真实框架/工具/子代理执行** → 全程围绕**一份活的 `spec.md`** 推进。
 
 五条不可违背的原则：
-1. **节点动态**：节点数随项目伸缩（3↔9+），由矩阵从四维推出，绝不写死。
+1. **节点动态**：节点数随项目伸缩（3↔9+），由矩阵从五维推出，绝不写死。
 2. **单一事实源**：`spec.md` 是中枢，所有节点往里追加/精炼自己负责的章节；没跑的章节标 `N/A`。
 3. **两道闸人控**：编排闸（开跑前）+ 关键节点闸（规格定稿/审查/合并前）。引擎评分可能误判，关键处必须停。
 4. **无内嵌节点方法**：不得使用框架内置节点方法兜底。推荐依赖缺失时必须提示安装或调整编排，不能悄悄降级。
@@ -25,7 +25,7 @@ description: 动态 Spec 编排器：按四维给需求打分，用矩阵动态�
 
 1. **编排器自己不执行任何领域工作。** 需求澄清、领域建模、规格编写、任务拆解、实现、审查、归档——**每一项都必须由被绑定的真实框架（Skill 工具调用 / 外部 tool / 子代理 Task）产生**。当前 agent 不得"自己理解后直接写"，不得用一段像框架产物的文本冒充框架执行。编排器只负责：识别 → Scope 发现 → 评分 → 编排 → 依赖体检 → 开闸 → 调度 → 校验出口门 → 写 spec.md 状态。
 2. **`/spec` 的第一步只做编排，不做实现。** 在 Gate 1 用户确认前，**禁止**进入任何实现、写计划、答疑、改代码。第一回合的唯一合法产出是【编排报告 + Gate 1】。若你发现自己正要直接写 plan 或直接动手——**停**，你违反了本条。
-3. **Step 3 必须输出完整【编排报告】模板**（见 Step 3），缺任一字段不得开闸：四维评分 / 跨仓 Scope 结果 / 节点清单 / 每节点框架绑定 / 执行模式 / 缺失依赖。
+3. **Step 3 必须输出完整【编排报告】模板**（见 Step 3），缺任一字段不得开闸：五维评分 / 跨仓 Scope 结果 / 节点清单 / 每节点框架绑定 / 执行模式 / 缺失依赖。
 4. **Gate 1 是硬 STOP。** 必须用 AskUserQuestion 停下等用户确认，**绝不连跑过去**。Gate 2（N3 定稿 / N6 审查 / 合并前）同理。**Gate 审计记录（mandatory）：** 每次 Gate 通过后，必须立即在 `spec.md` 的「Gate 审计记录」表中写入该 Gate 行：时间戳（ISO）、决策摘要（用户选了什么/校准了什么）、确认方式。
 5. **每个节点开始前必须打印声明行**（否则不得执行该节点）：
    `▶ {节点} | 框架: {registry 绑定名} | 模式: {current-agent | subagent} | 状态: {bound | blocked:install_required}`
@@ -42,12 +42,24 @@ description: 动态 Spec 编排器：按四维给需求打分，用矩阵动态�
 |---|---|---|
 | 标准模式 | `/spec` 或描述功能需求 | 走完整执行流程 |
 | **branch 模式** | `/spec branch` | 仅针对当前分支 diff；按 matrix.md §0 覆写规则缩减流程 |
+| **status 模式** | `/spec status` | 只读台账：扫全部 spec 的 front-matter，汇总进度，不启动编排 |
+| **iterate 模式** | `/spec iterate <slug>` 或对已 done 的 spec 提新需求 | 对已完成 spec 开 delta 迭代，不改写主 spec（见下） |
 
 **branch 模式执行差异（详见 matrix.md §0）：**
 - NS 替换为：`git diff main --name-only` + 涉及文件快速读（不做 Recon，不派 Explore agent）
-- 四维评分规模上限锁定 M；N8 必选并标注 introduced/pre-existing
+- 五维评分规模上限锁定 M；N8 必选并标注 introduced/pre-existing
 - **跳过 N4/N5**（diff 已存在，不做任务拆解与实现）；流程为 NS(diff) → N1 → [N3 记录改动] → N6 审查 → N7 验证 → N8
 - 适用场景：PR review 前快速生成改动范围的 spec
+
+**status 模式（台账，只读不编排）：**
+- 扫 `docs/spec/*/spec.md`（含 `changes/*/spec.md` delta），只读各自 front-matter。
+- 输出台账表：feature / status / 任务类型 / pending_items / spec_commit 漂移检查结果（对 status ≠ done 且 `spec_commit` 非空的 spec 跑 Step 0 的漂移检测命令；多个 spec 时合并为一次 Bash 循环批量跑，不逐个往返）/ 最后更新时间。
+- 结尾给出可操作建议：哪些可续跑（`/spec <slug>`）、哪些漂移需 review、哪些 pending_items 待补。**不进入任何编排或执行。**
+
+**iterate 模式（done 之后的迭代路径）：**
+- 触发条件：目标 spec 的 `status: done`，且用户带来新需求/变更。**禁止改写已 done 的主 spec 正文**（会破坏 Gate 审计与 spec_commit 链）。
+- 行为：在 `docs/spec/<slug>/changes/<NNN>-<change-slug>/spec.md` 新建 delta spec，front-matter 加 `parent_spec: ../../spec.md`；随后按标准流程五维评分、编排、执行（delta spec 即本轮的单一事实源）。
+- 收尾：N8 归档时把 delta 回写主 spec——N3 用了 OpenSpec 时按 registry 绑定 `openspec-archive-change` / `openspec-sync-specs`；否则 native 方式在主 spec 追加「迭代记录」章节（指向 delta 路径 + 结论摘要），主 spec 其余正文不动。
 
 ---
 
@@ -56,7 +68,7 @@ description: 动态 Spec 编排器：按四维给需求打分，用矩阵动态�
 ### Step 0 · 定位与初始化（编排器自身，唯一允许的非委派步骤）
 - 解析用户需求文本。
 - 确定 `spec.md` 落点：默认 `docs/spec/<feature-slug>/spec.md`（老项目沿用既有 docs 结构；无则建）。
-- **续跑（resume）**：若目标 `spec.md` 已存在，读 front-matter `status`（drafting→spec-locked→implementing→reviewing→done）与各章节 `N/A`/勾选标记，定位下一个未完成节点继续，**不从头重跑**；编排闸亮出"已完成/待续"状态供用户确认。
+- **续跑（resume）**：若目标 `spec.md` 已存在，读 front-matter `status`（drafting→spec-locked→implementing→reviewing→done）与各章节 `N/A`/勾选标记，定位下一个未完成节点继续，**不从头重跑**；编排闸亮出"已完成/待续"状态供用户确认。**若 `status: done` 且用户带来新需求：不得改写主 spec，转 iterate 模式（见「变体触发」）开 delta spec。**
 - **漂移检测（续跑时）**：读 front-matter 的 `spec_commit` 字段（Gate 2 N3 定稿时写入的 commit hash，见 Gate 2 段落）。若字段非空，运行 `git log --oneline {spec_commit}..HEAD -- <spec 覆盖的文件路径列表>`；若有改动，用 AskUserQuestion 提示：「spec 锁定后代码已有 N 次变更，涉及 [文件列表]，spec 可能已漂移。① 先 review 再继续（推荐）② 直接续跑（忽略漂移）」。
 - 读 `spec-template.md` 作为骨架。
 - **目标锚定（Goal Condition）**：将用户需求提炼为一条 `goal_condition` 字符串，格式：
@@ -91,12 +103,13 @@ NS 拆为两个子步，顺序执行；greenfield 项目 NS-B 标 N/A，NS-A 仍
 - **产出**：写进 `spec.md` 的「涉及服务 / 跨仓范围」章节：列出每个涉及的服务/仓 + 它在本功能里的角色 + 改动面。
 - **出口门**：跨栈范围已界定，并在 Gate 1 经用户确认完整（用户可补充遗漏的服务）。greenfield 无既有服务时标 `N/A`。
 
-### Step 1 · 四维评分（委派 + 编排器汇总）
-- 按 `matrix.md` 的 rubric，从需求文本 + NS 发现结果推断四维初值：**规模 / 风险 / 新老项目 / 领域清晰度**。
+### Step 1 · 五维评分（委派 + 编排器汇总）
+- 按 `matrix.md` 的 rubric，从需求文本 + NS 发现结果推断五维初值：**任务类型 / 规模 / 风险 / 新老项目 / 领域清晰度**（任务类型取值见 matrix.md §1a）。
+- 任务类型是第一判定维度（决定流程形态：bugfix 走诊断流、spike 无实现节点等，见 matrix.md §1a/§2b）；判不准默认 feature。
 - 这些是**初值**，Step 3 的编排闸会亮给用户校准——不要假定它们一定对。
 
 ### Step 2 · 矩阵编排
-- 按 `matrix.md` 的矩阵规则，从四维分数推出本次的 **{节点集 + 每节点风味}**。
+- 按 `matrix.md` 的矩阵规则，从五维分数推出本次的 **{节点集 + 每节点风味}**：先应用 §2a 升级规则叠加，再应用 §2b 任务类型覆写（覆写优先）。
 - always-on 核心：`N1(轻拷问) → N5 → N7`；老项目额外 always-on `NS`；其余按升级规则叠加。
 
 ### Step 3 · 依赖体检 + 编排闸（Gate 1 · 硬 STOP）
@@ -119,7 +132,7 @@ NS 拆为两个子步，顺序执行；greenfield 项目 NS-B 标 N/A，NS-A 仍
 🏁 目标条件（goal_condition）：<N7 最终验收准则；Step 0 初值/续跑当前值>
    状态：<ready 非空可验证 ｜ pending:N1_anchor 空且 N1 待跑（N1 出口门锚定）｜ blocked:goal_condition_required 空且 N1 不在待跑集（须 Gate 1 补填或豁免）｜ waived 已显式豁免（附 goal_condition_waiver_reason）>
 🌐 Scope（NS 跨仓发现）：<涉及服务/仓清单，或 N/A>
-📊 四维评分：规模=? 风险=? 项目=新/老 领域清晰度=?
+📊 五维评分：任务类型=? 规模=? 风险=? 项目=新/老 领域清晰度=?
 🧩 节点集：N? → N? → ...（共 N 个）
 🔗 每节点绑定：
    - N1 需求拷问 | 框架: grill-with-docs | 模式: 待选 | 状态: ✅bound
@@ -128,14 +141,14 @@ NS 拆为两个子步，顺序执行；greenfield 项目 NS-B 标 N/A，NS-A 仍
 ⚠️ 缺失依赖：<列出 ❌ 项 + 安装/改编排/暂停选项>
 🤖 模型分层：advisor = {tier_high模型}（NS/N1/N2/N3/N6/N7）| N4 = {tier_high模型}（规格清晰时可在 Gate 1 降为 {tier_mid模型}）| executor = {tier_mid模型}（N5）
    ⚠️ 风险H时 N5 executor 自动升为 {tier_high模型}（矩阵规则触发，无需再选）
-   ⚠️ 模型注入只对「以 subagent 派发」的节点生效；选 current-agent 的节点在主 agent（advisor 档）执行，无独立注入
+   ⚠️ 模型注入只对「以 subagent 派发」的节点生效；选 current-agent 的节点在主 agent（advisor 档）执行，无独立注入；fork 型子代理恒随主模型，注入无效
 ```
 
-（`{tier_high模型}` / `{tier_mid模型}` 在运行时按 `registry.yaml` 的 `executor_model_map[当前执行器]` 解析为具体模型名）
+（`{tier_high模型}` / `{tier_mid模型}` 在运行时按 `registry.yaml` 的 `executor_model_map[当前执行器]` 解析为具体模型名；模型时效校准规则见该表上方注释。）
 
-- 然后用 **AskUserQuestion 开编排闸**，亮出：四维判分（可改）、节点清单+风味、依赖体检（✅/❌）、支持 subagent 的节点逐项给 `①subagent｜②当前 agent`、每个 ❌ 给安装选项（装什么/来源/卸载/前置；选装即授权，按 `references/install.md` 自动核实安装验证）。
+- 然后用 **AskUserQuestion 开编排闸**，亮出：五维判分（可改）、节点清单+风味、依赖体检（✅/❌）、支持 subagent 的节点逐项给 `①subagent｜②当前 agent`、每个 ❌ 给安装选项（装什么/来源/卸载/前置；选装即授权，按 `references/install.md` 自动核实安装验证）。
 - 若用户不安装：只能改编排去掉该节点、改选另一已可用风味、选该节点显式允许的 native 模式、或暂停；**不得用内嵌方法替代**。
-- **大流程呈现协议（节点多时必读）**：AskUserQuestion 上限 4 问、每问 2-4 选，装不下 9 节点全量闸。按此渲染：①先用**文本**完整呈现上面【编排报告】；②再用 AskUserQuestion 只问**需用户拍板的少数决策**（≤4 问），其余应用默认（四维判分默认接受、支持 subagent 的节点默认 current-agent、缺件默认"改编排去掉该节点"）；③决策多于 4 项时分批问，或合并为一问"是否接受这套编排(含默认)？否则逐项调整"。
+- **大流程呈现协议（节点多时必读）**：AskUserQuestion 上限 4 问、每问 2-4 选，装不下 9 节点全量闸。按此渲染：①先用**文本**完整呈现上面【编排报告】；②再用 AskUserQuestion 只问**需用户拍板的少数决策**（≤4 问），其余应用默认（五维判分默认接受、支持 subagent 的节点默认 current-agent、缺件默认"改编排去掉该节点"）；③决策多于 4 项时分批问，或合并为一问"是否接受这套编排(含默认)？否则逐项调整"。
 - **用户确认/微调后才进 Step 4。** （铁律 2/4）
 
 ### Step 4 · 顺序执行节点（每个节点都委派框架）
@@ -152,7 +165,7 @@ NS 拆为两个子步，顺序执行；greenfield 项目 NS-B 标 N/A，NS-A 仍
    - `② tool`：仅当用户在编排闸同意绑定且已装时，调外部工具。
    - `③ agent`：用 Task 工具派该 agent（如 NS 的 Explore/codebase-analyzer），声明输入/输出/写入范围。
    - `④ 执行模式`：用户在 Gate 选 `subagent` 时派子任务（声明输入、输出、写入范围、不得回退用户改动）；选 `current-agent` 时由当前 agent 调用**已绑定框架**执行（仍不得自由发挥替代框架，除非节点显式 `native_*_allowed`）。
-   - `⑤ 模型注入（所有 subagent 派发节点通用）`：**仅当节点以 subagent 派发时**，从 `registry.yaml` 的 `executor_model_map[当前执行器]` 取模型名注入 Agent 工具的 `model` 参数——advisor 节点（NS/N1/N2/N3/N6）用 `tier_high`；N4 默认 `tier_high`、规格清晰且 Gate 1 已降档时用 `tier_mid`（读 `N4_tasks.executor_model`）；N5 用 `tier_mid`、风险 H 升 `tier_high`。选 `current-agent` 的节点在主 agent（advisor 档）执行，无独立模型注入。**N5 以 subagent 派发时，advisor（当前 agent）不亲自写实现**，只在 N6 读取 executor 产出的 diff 审查；N5 选 `current-agent` 时由当前 agent 调用已绑定 TDD 框架实现（此时无 executor/advisor 分层）。
+   - `⑤ 模型注入（所有 subagent 派发节点通用）`：**仅当节点以 subagent 派发时**，从 `registry.yaml` 的 `executor_model_map[当前执行器]` 取模型名注入 Agent 工具的 `model` 参数——advisor 节点（NS/N1/N2/N3/N6）用 `tier_high`；N4 默认 `tier_high`、规格清晰且 Gate 1 已降档时用 `tier_mid`（读 `N4_tasks.executor_model`）；N5 用 `tier_mid`、风险 H 升 `tier_high`。选 `current-agent` 的节点在主 agent（advisor 档）执行，无独立模型注入；**fork 型子代理恒随主模型，model 参数注入无效**（fork 的价值是继承全上下文，见 registry 的 fork_hint）。**N5 以 subagent 派发时，advisor（当前 agent）不亲自写实现**，只在 N6 读取 executor 产出的 diff 审查；N5 选 `current-agent` 时由当前 agent 调用已绑定 TDD 框架实现（此时无 executor/advisor 分层）。
 2. **写章节**：把框架产物写进 `spec.md` 该节点负责的章节（见 `spec-template.md`）。
 3. **过出口门**：校验该节点出口门（N1 意图被逼出、N7 DoD 全绿……）；不过则不进下一节点。N1 未过**禁止**进 N3/N5（铁律 6）。
    > **N1 出口门补充（mandatory）：** N1 不只产出「真实意图」，还必须做 Goal Sync：把 N1 逼出的真实意图与 front-matter `goal_condition` 对齐。若真实意图改变，必须在进入 N3 或 N5 前更新 goal_condition，并在「问题与非目标」章节记录旧值、新值、更新原因。若 goal_condition 为空且未被显式豁免，必须 AskUserQuestion 让用户补填可验证条件或明确豁免；否则不得进入 N3/N5。
@@ -182,13 +195,15 @@ NS 拆为两个子步，顺序执行；greenfield 项目 NS-B 标 N/A，NS-A 仍
 >    - N4 未运行：使用 N1 同步后的 front-matter `goal_condition`。
 >    - 条件来源为空且未豁免：按上面「N5 前必须」的处置顺序先 AskUserQuestion 补填或豁免，**不得在此静默跳过**。
 >    - 条件来源已显式豁免（或用户在上一步选择豁免后仍为空）：记录原因后跳过 `/goal` 启用询问，继续 N5。
-> 2. N5 开始时执行：`/goal <条件字符串>`（最长 4000 字符，多任务可串联 `and`；超长时拆分或回 AskUserQuestion 选择缩减）
-> 3. 执行者专注写代码；评估器每轮判断条件是否满足：
->    - **Claude Code**：独立 Haiku 模型读 transcript 判断（执行者与裁判分离，质量保证更强）；可通过 Stop hook 自定义替换 Haiku
->    - **Codex**：自我评估（同一模型判断完成，无独立裁判；条件设计须更加明确可量化）
-> 4. 条件满足 → N5 自动退出；条件未满足 → 继续循环，Haiku 否定理由作为下轮指导
-> 5. ⚠️ N5 中必须将验证命令及其输出**打印到对话里**评估器才能读到；N5 若以 subagent 派发，`/goal` 在该子代理内运行、评估器读的是**子代理自身的 transcript**，故验证命令须打印在实际执行 N5 的那个 agent 的上下文里
-> 6. N7 接管时 /goal 已确认条件绿，但 N7 仍独立验证（cheapest-first：先跑单测）
+> 2. **启用机制（关键约束）**：`/goal` 是编译进 CLI 的内置命令，**编排器/模型无法代为执行**。启用时编排器必须：打印完整可复制的一行 `/goal <条件字符串>`（最长 4000 字符，多任务可串联 `and`；超长时拆分或回 AskUserQuestion 选择缩减），然后 AskUserQuestion 给「① 我已粘贴执行该命令，继续 ② 不启用 /goal，直接跑 N5」。不得假装 /goal 已生效。
+>    - 无头替代（须用户明确选择）：在独立 worktree 里跑 N5 时，可由用户运行 `claude -p "/goal <条件>"` 一次性跑完整循环。
+> 3. **执行模式约束**：/goal 只作用于当前会话，故**仅 N5 选 current-agent 时可用**。N5 以 subagent 派发时 /goal 不可用（Task 子代理无法运行内置命令）——替代方案：把条件全文注入派发 prompt，要求 executor 打印所有验证命令及输出；advisor 收到产物后**亲自复跑条件命令**判定，不得只信子代理报告。
+> 4. 执行者专注写代码；评估器每轮判断条件是否满足：
+>    - **Claude Code**：独立评估器（small fast model，默认 Haiku，可在 model-config 调整或自写 prompt-based Stop hook 替代）只读 transcript 判断，执行者与裁判分离；前置要求见 registry `N5_implement.goal_integration.evaluator.requires`。
+>    - **Codex**：Goals 是提示范式——把可测量终止条件写进任务指令，自我评估、无独立裁判；条件设计须更加明确可量化。
+> 5. 条件满足 → N5 自动退出；条件未满足 → 继续循环，评估器否定理由作为下轮指导。
+> 6. ⚠️ 评估器不调工具、只读对话：N5 中必须将验证命令及其输出**打印到对话里**评估器才能读到。
+> 7. N7 接管时 /goal 已确认条件绿，但 N7 仍独立验证（cheapest-first：先跑单测）。
 
 > **N7 coverage accounting（mandatory）：**
 > 1. **cheapest-first 顺序 + 三态标记**：先单测（最快反馈）→ lint → typecheck → build → goal_condition 验收。**每项 DoD 只允许三种状态**：✅ 通过 / ❌ 失败 / ⏭️ BLOCKED(原因)。**不允许留空**——留空视为 N7 未完成。⏭️ BLOCKED 必须附原因（如「主应用依赖业务数据库连接，本地无法启动」）；BLOCKED 项是否豁免须在 N7 闸中 AskUserQuestion 让用户确认，用户豁免后追加 `waived:原因`，未豁免的 BLOCKED 项 = N7 未通过。
@@ -206,7 +221,7 @@ NS 拆为两个子步，顺序执行；greenfield 项目 NS-B 标 N/A，NS-A 仍
 - **合并前**（尤其风险 H：要 Human Approval）
 
 ### Step 5 · 归档（N8）
-把"为何这么设计、哪些方案被否、新增领域词、改了哪些边界、遗留 TODO"沉淀进 `spec.md` 的归档章节 / ADR / CONTEXT。N8 只能用 `registry.yaml` 登记的方式执行。
+把"为何这么设计、哪些方案被否、新增领域词、改了哪些边界、遗留 TODO"沉淀进 `spec.md` 的归档章节 / ADR / CONTEXT。N8 按 `registry.yaml` 登记方式执行：N3 用了 OpenSpec 时优先 `openspec-archive-change`；否则 native current-agent 归档写作是其正式登记方式。iterate 模式的收尾规则见「变体触发」iterate 模式。
 
 ### Step 6 · `done` 转换条件（mandatory gate，编排器最后一步）
 
@@ -228,7 +243,7 @@ NS 拆为两个子步，顺序执行；greenfield 项目 NS-B 标 N/A，NS-A 仍
 |---|---|---|
 | N0 | 项目底座（标准/命令注入） | 标准齐 |
 | NS | 跨服务/跨仓范围发现（老项目强制，派子代理） | 跨栈范围界定并经用户确认 |
-| N1 | 需求拷问 | 真实意图被逼出（未过禁进 N3/N5） |
+| N1 | 需求拷问（任务类型=bugfix 时＝复现与根因诊断） | 真实意图被逼出 / bugfix：根因已定位（未过禁进 N3/N5） |
 | N2 | 领域建模 | 词汇人机一致 |
 | N3 | 规格 | **关键闸·定稿** |
 | N4 | 任务拆解 | 任务可单测单审 |
@@ -254,7 +269,7 @@ NS 拆为两个子步，顺序执行；greenfield 项目 NS-B 标 N/A，NS-A 仍
 
 | 文件 | 何时读 |
 |---|---|
-| `matrix.md` | Step 1/2：四维 rubric + 编排矩阵 + 示例流程 |
+| `matrix.md` | Step 1/2：五维 rubric + 编排矩阵 + 示例流程 |
 | `registry.yaml` | Step 3：节点→各执行器调用名、安装需求、subagent 支持 |
 | `references/registry.md` | 需要人读版的登记表解释时 |
 | `spec-template.md` | Step 0：spec.md 骨架与章节归属 |

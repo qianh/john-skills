@@ -24,10 +24,17 @@
 - `env`: `claude-code` | `codex` | `any`
 - `kind`: `skill`（调技能）| `tool`（外部工具）| `agent`（派子代理，如 NS 的 `Explore`/`codebase-analyzer`）
 - `name`: 调用名或工具名
+- `condition`: 该候选适用的维度条件（含任务类型，如「任务类型=bugfix」；不满足条件的候选跳过探测）
 - `flavor_rule`: 该节点按维度选风味的规则（与 `matrix.md` §3 一致）
 - `install`: 缺失时对应的安装项；具体核实和安装步骤见 `references/install.md`
 - `subagent`: 该节点是否支持 subagent、推荐角色、用户选择要求，以及是否允许 native current-agent / native subagent
+- `subagent.fork_hint`: 节点级 CC fork 型子代理使用建议（fork 通用特性见 `registry.yaml` 的 `execution_modes` 注释）
 - `goal_condition_sync_required`: 节点出口门是否必须同步 front-matter `goal_condition`
 - `goal_integration.ask_timing`: `/goal` opt-in 的询问节点；当前只允许 N5 前、N4 后
+- `goal_integration.invocation`: `/goal` 启用机制的机器可读枚举（机制详情见 SKILL.md「N5 /goal 集成」）
+- `goal_integration.modes`: `/goal` 的执行模式支持声明（仅 N5 current-agent；subagent 替代流程见 SKILL.md「N5 /goal 集成」）
 - `invalidates_on_rerun`: 节点重跑后必须作废并重跑的后续节点
 - `requires_after_last_run`: 当前节点通过前，指定节点必须晚于最近一次实现运行
+
+## 模型映射时效
+`executor_model_map` 的模型名会随发布过时；Gate 1 前的校准规则见 `registry.yaml` 该表上方注释。更新模型名只改 `registry.yaml`，不动 SKILL.md。

@@ -34,7 +34,8 @@
 已核实(2026-06-02)：repo github.com/Fission-AI/OpenSpec，npm `@fission-ai/openspec`，CLI `openspec`，需 Node ≥20.19.0。安装 `npm install -g @fission-ai/openspec@latest`，卸载 `npm uninstall -g @fission-ai/openspec`。安装后至少验证：
 - `openspec --version` 可执行；
 - `openspec init` 能初始化或校验一个最小 change proposal；
-- 当前项目中不会覆盖已有 spec 文件。
+- 当前项目中不会覆盖已有 spec 文件；
+- **skill 套件可被发现**：`openspec-propose` / `openspec-explore` / `openspec-apply-change` / `openspec-sync-specs` / `openspec-archive-change` 出现在 runtime 的 available skills 列表中（它们是 N3/N5/N8 的优先候选；CLI 装好但 skill 未出现时，重新 `openspec init` 或重启会话再验）。
 
 ## Taskmaster
 

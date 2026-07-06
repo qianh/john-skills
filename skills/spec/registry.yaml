@@ -15,6 +15,7 @@ execution_kinds:
 execution_modes:
   - current-agent
   - subagent
+  # CC 另支持 fork 型子代理（继承主会话全上下文；模型注入对 fork 无效，恒随主模型）。
 
 # ── 模型分层（Advisor/Executor 角色固定，执行器映射在 executor_model_map）──
 model_tiers:
@@ -22,13 +23,15 @@ model_tiers:
   executor:        tier_mid    # 实现节点
   executor_risk_H: tier_high   # 风险H时 executor 升格与 advisor 同级
 
+# 模型时效性：模型名随发布演进会过时（本表核实于 2026-07-05）。
+# Gate 1 呈现模型分层前，若编排器已知有更新一代可用模型，必须提示用户校准，不得照本宣科。
 executor_model_map:
   claude-code:
-    tier_high: opus
-    tier_mid:  sonnet
+    tier_high: fable        # Claude Fable 5（Mythos 级，高于 Opus）；环境不支持时回退 opus
+    tier_mid:  sonnet       # Sonnet 5
   codex:
-    tier_high: o3
-    tier_mid:  gpt-4o-mini
+    tier_high: gpt-5.5      # 最强复杂编码模型（gpt-5.2 / o3 系已弃用）
+    tier_mid:  gpt-5.4      # 旗舰默认档；gpt-5.4-mini 仅适合轻量探查子代理，不承担 N5 实现
   # 新执行器：在此追加一个 block，SKILL.md 逻辑无需改动
 
 installables:
@@ -94,9 +97,9 @@ nodes:
       - { env: codex, kind: skill, name: codebase-analyzer, role: cross_service_scan, install: missing-skill }
 
   N1_grill:
-    stage: 需求拷问
-    flavor_rule: "有码库→grill-with-docs；无码库→grill-me；greenfield 需求发散可辅以 brainstorming"
-    produces: [问题与非目标, 失败路径, 验收草案, goal_condition更新记录]
+    stage: 需求拷问 / 缺陷诊断
+    flavor_rule: "任务类型=bugfix→诊断流(systematic-debugging；需全环插桩时改用 diagnose，二选一不并跑)；否则：有码库→grill-with-docs；无码库→grill-me；greenfield 需求发散可辅以 brainstorming"
+    produces: [问题与非目标, 失败路径, 验收草案, goal_condition更新记录, "复现步骤与根因（bugfix 必填）"]
     goal_condition_sync_required: true
     exit_gate: 真实意图被逼出 + goal_condition 已同步（进入 N3 或 N5 前）
     missing_policy: install_or_adjust_plan
@@ -109,6 +112,9 @@ nodes:
       native_current_agent_allowed: false
       native_subagent_allowed: false
     invocations:
+      - { env: claude-code, kind: skill, name: "superpowers:systematic-debugging", condition: "任务类型=bugfix（复现→根因先行，未定位根因禁提修复）", install: missing-skill }
+      - { env: codex, kind: skill, name: systematic-debugging, condition: "任务类型=bugfix", install: missing-skill }
+      - { env: claude-code, kind: skill, name: diagnose, condition: "任务类型=bugfix 且需全环诊断（复现→最小化→插桩→回归）", auxiliary: true, install: missing-skill }
       - { env: any, kind: skill, name: grill-with-docs, condition: brownfield, install: missing-skill }
       - { env: any, kind: skill, name: grill-me, condition: greenfield, install: missing-skill }
       - { env: codex, kind: skill, name: codebase-analyzer, role: context_scan, auxiliary: true, install: missing-skill }
@@ -134,7 +140,9 @@ nodes:
   N3_spec:
     stage: 规格
     # CC 无 sdd-development（codex-only）时，OpenSpec 作为 env:any 主绑定承接全规模（含 H）。
-    flavor_rule: "规模L/M→OpenSpec；规模H/新项目→sdd-development(codex)，CC 无 sdd 时 OpenSpec(env:any) 承全规模含 H；风险H→对抗审查"
+    # CC 侧装有 OpenSpec skill 套件（openspec-propose 等）时，skill 形态优先于裸 CLI。
+    flavor_rule: "CC 有 openspec-propose skill→优先之；规模L/M→OpenSpec；规模H/新项目→sdd-development(codex)，CC 无 sdd 时 OpenSpec(env:any) 承全规模含 H；风险H→对抗审查"
+    acceptance_criteria_format: "推荐 EARS 格式，骨架见 spec-template 验收标准章节"
     produces: [需求, 数据模型/API/UI/兼容/权限, 验收标准, 测试策略]
     exit_gate: 关键闸·定稿
     missing_policy: install_or_adjust_plan
@@ -147,6 +155,7 @@ nodes:
       native_current_agent_allowed: false
       native_subagent_allowed: false
     invocations:
+      - { env: claude-code, kind: skill, name: openspec-propose, condition: "OpenSpec 已安装并 init（skill 形态，优先于裸 CLI）", install: openspec }
       - { env: codex, kind: skill, name: sdd-development, condition: "规模H或新项目", install: missing-skill }
       - { env: any, kind: tool, name: openspec, condition: "全规模（规模H 且无 sdd 时由 OpenSpec 承接，见 flavor_rule）", install: openspec }
       - { env: any, kind: skill, name: requesting-code-review, condition: "风险H规格审查", auxiliary: true, install: missing-skill }
@@ -189,14 +198,22 @@ nodes:
       condition_source: "N4 任务拆解产出的 Done 标准字段；若本轮未运行 N4，则使用 N1 同步后的 front-matter goal_condition"
       max_chars: 4000
       overflow_policy: split_or_ask_user
+      invocation:
+        # 机制单一事实源在 SKILL.md「N5 /goal 集成」；此处仅存机器可读枚举。
+        mechanism: user_types_command   # /goal 是编译进 CLI 的内置命令，模型/Skill 工具均无法代为执行
+        headless_alternative: "claude -p \"/goal <条件>\""   # 适用条件见 SKILL.md N5 /goal 集成
+      modes:
+        current-agent: supported     # /goal 作用于当前会话；评估器读主会话 transcript
+        subagent: unsupported        # Task 子代理无法运行内置命令；替代流程见 SKILL.md N5 /goal 集成 §3
       evaluator:
         claude-code:
           type: external      # 独立评估器，执行者与裁判分离，质量保证更强
-          model: haiku        # 默认；可通过 Stop hook 替换为 sonnet/opus 或脚本
-          reads: transcript_only  # 不调工具，只读对话记录
+          model: small-fast-model   # 默认 Haiku；在 model-config 调整，或自写 prompt-based Stop hook 替代
+          reads: transcript_only    # 不调工具，只读对话记录
+          requires: "Claude Code ≥ 2.1.139；工作区已通过信任对话框；未设置 disableAllHooks"
           customizable: true
         codex:
-          type: self_evaluating   # Codex 自身判断完成，无独立裁判
+          type: self_evaluating   # Codex Goals 是提示范式：可测量终止条件写进任务指令，自我评估，无独立裁判
           note: "自我评估偏乐观；条件须更加明确可量化"
     model_tier: executor
     executor_model:
@@ -225,10 +242,11 @@ nodes:
       - { env: any, kind: tool, name: tdd-guard, condition: "风险H", install: tdd-guard }
       - { env: claude-code, kind: skill, name: "superpowers:executing-plans", condition: "已有书面计划、分会话执行", auxiliary: true, install: missing-skill }
       - { env: claude-code, kind: skill, name: "superpowers:subagent-driven-development", condition: "独立任务派子代理执行", auxiliary: true, install: missing-skill }
+      - { env: claude-code, kind: skill, name: openspec-apply-change, condition: "N3 用 OpenSpec 产出 change 时按其 tasks 实施", auxiliary: true, install: openspec }
 
   N6_review:
     stage: 审查
-    flavor_rule: "默认 code-review / requesting-code-review；风险H→对抗审查"
+    flavor_rule: "默认 code-review / requesting-code-review；风险H 或 任务类型=security→加挂 security-review；任务类型=refactor→加挂 simplify；风险H→对抗审查"
     produces: [审查记录]
     exit_gate: 关键闸·审查（每条finding已vet，by-design/误归因/重复已过滤，附核实证据）
     missing_policy: install_or_adjust_plan
@@ -237,6 +255,7 @@ nodes:
       choice_required: true
       role: explorer
       use_when: "需要独立上下文审查 diff/spec，尤其是风险H或合并前"
+      fork_hint: "CC 选 subagent 时优先 fork 型——审查不丢实现语境（fork 通用特性见 execution_modes 注释）"
       current_agent_allowed: true
       native_current_agent_allowed: true
       native_subagent_allowed: true
@@ -244,6 +263,8 @@ nodes:
       - { env: claude-code, kind: skill, name: "superpowers:requesting-code-review", install: missing-skill }
       - { env: claude-code, kind: skill, name: code-review, install: missing-skill }
       - { env: codex, kind: skill, name: requesting-code-review, install: missing-skill }
+      - { env: claude-code, kind: skill, name: security-review, condition: "风险H 或 任务类型=security", auxiliary: true, install: missing-skill }
+      - { env: claude-code, kind: skill, name: simplify, condition: "任务类型=refactor 的质量清理（不猎 bug）", auxiliary: true, install: missing-skill }
 
   N7_verify:
     stage: 验证
@@ -281,5 +302,9 @@ nodes:
     missing_policy: install_or_adjust_plan
     subagent:
       supported: false
+      # native current-agent 是 N8 的正式登记方式之一：归档写作（ADR/CONTEXT/spec 归档章节）
+      # 本就是当前 agent 可直接执行的真实工作；下列 invocations 仅在 N3 用了 OpenSpec 时优先。
       native_current_agent_allowed: true
-    invocations: []
+    invocations:
+      - { env: claude-code, kind: skill, name: openspec-archive-change, condition: "N3 用 OpenSpec 产出 change，实施完成后归档", install: openspec }
+      - { env: claude-code, kind: skill, name: openspec-sync-specs, condition: "/spec iterate：delta spec 回写主 spec（不归档 change）", install: openspec }

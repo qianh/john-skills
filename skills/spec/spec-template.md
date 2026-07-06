@@ -10,7 +10,7 @@
 # 引擎决策记录（自动写入；编排闸校准后定稿）
 feature: <slug>
 executor: claude-code | codex
-scores:  { 规模: M, 风险: H, 项目: 老, 领域清晰度: 清晰 }
+scores:  { 任务类型: feature, 规模: M, 风险: H, 项目: 老, 领域清晰度: 清晰 }  # 任务类型: feature|bugfix|refactor|perf|security|spike
 nodes:   [N1, N3, N4, N5, N6, N7]
 flavors: { N1: grill-with-docs, N3: openspec|sdd-development, N6: requesting-code-review|code-review, N7: verification-before-completion }
 execution_modes: { N3: subagent, N6: current-agent, N7: current-agent }
@@ -20,6 +20,7 @@ spec_commit: ""         # N3 定稿时写入（git rev-parse --short HEAD），�
 goal_condition: ""      # Step 0 提炼：「当[可验证命令输出]为真时本次工作完成」；必须 transcript-verifiable；N7 最终验收准则
 goal_condition_waived: false  # 仅用户明确选择无法提供可验证目标时改 true；N5/N7 必须记录原因
 goal_condition_waiver_reason: ""
+# parent_spec: ../../spec.md   # 仅 /spec iterate 的 delta spec 使用（指向已 done 的主 spec）
 created: <YYYY-MM-DD>
 ---
 
@@ -43,6 +44,7 @@ created: <YYYY-MM-DD>
 - 要解决什么痛点 / 用户是谁：
 - 非目标（明确不做）：
 - 失败路径：
+- 复现步骤与根因：          <!-- 任务类型=bugfix 必填（诊断流产出）；其他类型标 N/A -->
 
 ## 领域词表                <!-- N2，未跑则 N/A -->
 
@@ -52,8 +54,9 @@ created: <YYYY-MM-DD>
 
 ## 数据模型 / API / UI / 兼容 / 权限   <!-- N3，→ 裂变 design.md -->
 
-## 验收标准                <!-- N3 -->
-- AC-001 …
+## 验收标准                <!-- N3；推荐 EARS 格式（可测、无歧义） -->
+- AC-001 (EARS)：WHEN <触发/前置状态>, THE SYSTEM SHALL <可观察行为>
+- AC-002 …
 
 ## 测试策略                <!-- N3 -->
 - 单元 / 集成 / E2E / 手工验收：
