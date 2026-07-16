@@ -7,9 +7,10 @@
 
 ## 运行时怎么解析
 1. **认环境**：读环境变量 `CLAUDECODE`——存在 → `claude-code`；否则 → `codex`。
-2. **取候选**：对每个节点，从 `registry.yaml` 的 `invocations` 里按优先级取"当前环境"的候选。
-3. **探在不在**：逐一检查候选 `skill` / `tool` 是否实际可调用（✅/❌）。第一个可用就绑定；都不可用且没有被用户选择的 native agent 模式 → 标记 `blocked: install_required`。
-4. **亮给用户**：体检结果在编排闸展示，缺失项给安装/改编排/暂停选项；支持 subagent 的节点给 subagent/当前 agent 选择。
+2. **认模型（模型直通检测）**：读会话声明的主模型名，与 `model_overrides.framework_free_models` 比对（如 `gpt-5.6-sol`）。命中 → `framework_free.skip_bindings` 内的过程框架（superpowers 全家、OpenSpec/sdd、TDD/计划脚手架）一律不绑定不探测，对应节点 native current-agent 由模型直接执行（正式登记方式，非降级）；清单外绑定（grill 拷问、NS 扫描等）照常。
+3. **取候选**：对每个节点，从 `registry.yaml` 的 `invocations` 里按优先级取"当前环境"的候选（模型直通命中时跳过 skip_bindings 项）。
+4. **探在不在**：逐一检查候选 `skill` / `tool` 是否实际可调用（✅/❌）。第一个可用就绑定；都不可用且没有被用户选择的 native agent 模式 → 标记 `blocked: install_required`。
+5. **亮给用户**：体检结果在编排闸展示，缺失项给安装/改编排/暂停选项；支持 subagent 的节点给 subagent/当前 agent 选择（N1 例外：grill 拷问是与用户的一问一答交互，固定 current-agent，不派 subagent）。
 
 ### 容错关键
 即便第 1 步认错环境，第 3 步"探在不在"也会兜底——另一执行器的技能在当前环境根本调不动，自然滑到下一候选。**所以认环境只是加速，不是单点故障。**
@@ -29,6 +30,8 @@
 - `install`: 缺失时对应的安装项；具体核实和安装步骤见 `references/install.md`
 - `subagent`: 该节点是否支持 subagent、推荐角色、用户选择要求，以及是否允许 native current-agent / native subagent
 - `subagent.fork_hint`: 节点级 CC fork 型子代理使用建议（fork 通用特性见 `registry.yaml` 的 `execution_modes` 注释）
+- `interactive_protocol`: 节点为交互式访谈时的协议标记（N1 = `one_question_at_a_time`，详见 SKILL.md「N1 拷问执行协议」）
+- `model_overrides.framework_free_models`: 模型直通名单——主模型命中时跳过 `framework_free.skip_bindings` 内的过程框架绑定，节点 native 执行（SKILL.md 铁律 8 的唯一例外）
 - `goal_condition_sync_required`: 节点出口门是否必须同步 front-matter `goal_condition`
 - `goal_integration.ask_timing`: `/goal` opt-in 的询问节点；当前只允许 N5 前、N4 后
 - `goal_integration.invocation`: `/goal` 启用机制的机器可读枚举（机制详情见 SKILL.md「N5 /goal 集成」）

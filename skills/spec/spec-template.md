@@ -15,6 +15,7 @@ nodes:   [N1, N3, N4, N5, N6, N7]
 flavors: { N1: grill-with-docs, N3: openspec|sdd-development, N6: requesting-code-review|code-review, N7: verification-before-completion }
 execution_modes: { N3: subagent, N6: current-agent, N7: current-agent }
 deps_check: { grill-with-docs: ok, taskmaster: "missing→install_required" }
+model_bypass: ""        # 主模型命中 registry model_overrides.framework_free_models（如 gpt-5.6-sol）时写入模型名；空 = 未命中，照常框架绑定
 status: drafting        # drafting → spec-locked → implementing → reviewing → done（done 条件见 SKILL.md Step 6）
 spec_commit: ""         # N3 定稿时写入（git rev-parse --short HEAD），用于续跑漂移检测
 goal_condition: ""      # Step 0 提炼：「当[可验证命令输出]为真时本次工作完成」；必须 transcript-verifiable；N7 最终验收准则

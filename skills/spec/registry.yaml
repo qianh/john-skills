@@ -34,6 +34,44 @@ executor_model_map:
     tier_mid:  gpt-5.4      # 旗舰默认档；gpt-5.4-mini 仅适合轻量探查子代理，不承担 N5 实现
   # 新执行器：在此追加一个 block，SKILL.md 逻辑无需改动
 
+# ── 模型直通覆写（framework-free bypass）──
+# 主 agent 模型命中 framework_free_models 时：skip_bindings 内的"过程框架"绑定一律跳过
+# （不探测、不引导安装），对应节点以 native current-agent 由模型直接执行——这是该模式下
+# 的正式登记方式，不算降级兜底（SKILL.md 铁律 8 的唯一例外）。
+# 编排流程本身不变：五维评分、节点集、Gate、出口门、spec.md 单一事实源与写入义务照旧，
+# 只换"节点由谁执行"。检测与呈现规则见 SKILL.md Step 3「模型直通检测」。
+model_overrides:
+  framework_free_models: [gpt-5.6-sol]
+  framework_free:
+    # 跳过的绑定：superpowers 全家 + 同类 spec/TDD/计划过程框架
+    skip_bindings:
+      - "superpowers:*"               # CC 侧 superpowers 命名空间全部
+      # Codex 侧 superpowers 裸名
+      - writing-plans
+      - test-driven-development
+      - using-git-worktrees
+      - executing-plans
+      - subagent-driven-development
+      - requesting-code-review
+      - verification-before-completion
+      - systematic-debugging
+      - brainstorming
+      # 同类过程框架（spec / 计划 / TDD 脚手架）
+      - tdd
+      - tdd-guard
+      - taskmaster
+      - openspec
+      - openspec-propose
+      - openspec-apply-change
+      - openspec-archive-change
+      - openspec-sync-specs
+      - sdd-development
+      - planning-with-files
+    # 不受影响的绑定（能力/交互类，非过程脚手架）：
+    # grill-me / grill-with-docs / diagnose（交互拷问与诊断）、Explore / codebase-analyzer（范围发现）、
+    # code-review / security-review / simplify / verify / init 等执行器原生技能——照常探测绑定。
+    effect: native_current_agent      # 命中节点视为 native_current_agent_allowed=true；出口门与 spec.md 写入义务不变
+
 installables:
   openspec:
     type: tool
@@ -101,16 +139,13 @@ nodes:
     flavor_rule: "任务类型=bugfix→诊断流(systematic-debugging；需全环插桩时改用 diagnose，二选一不并跑)；否则：有码库→grill-with-docs；无码库→grill-me；greenfield 需求发散可辅以 brainstorming"
     produces: [问题与非目标, 失败路径, 验收草案, goal_condition更新记录, "复现步骤与根因（bugfix 必填）"]
     goal_condition_sync_required: true
-    exit_gate: 真实意图被逼出 + goal_condition 已同步（进入 N3 或 N5 前）
+    interactive_protocol: one_question_at_a_time   # 协议详情见 SKILL.md「N1 拷问执行协议」：逐问、附推荐答案、无问题数上限、问到无未决分支
+    exit_gate: 真实意图被逼出（未决分支清单=空） + goal_condition 已同步（进入 N3 或 N5 前）
     missing_policy: install_or_adjust_plan
     subagent:
-      supported: true
-      choice_required: true
-      role: explorer
-      use_when: "老项目、大需求、领域边界模糊，且拷问可与本地代码扫描并行"
-      current_agent_allowed: true
+      supported: false
+      reason: "grill 拷问是与用户的一问一答交互，子代理无法与用户对话——派发即退化为自问自答、用户收到的问题数归零。需要并行代码扫描时用下方 auxiliary codebase-analyzer，不得替代拷问本身。"
       native_current_agent_allowed: false
-      native_subagent_allowed: false
     invocations:
       - { env: claude-code, kind: skill, name: "superpowers:systematic-debugging", condition: "任务类型=bugfix（复现→根因先行，未定位根因禁提修复）", install: missing-skill }
       - { env: codex, kind: skill, name: systematic-debugging, condition: "任务类型=bugfix", install: missing-skill }
@@ -129,7 +164,7 @@ nodes:
       supported: true
       choice_required: true
       role: explorer
-      use_when: "术语跨多个模块或需要并行提取代码中的领域语言"
+      use_when: "术语跨多个模块或需要并行提取代码中的领域语言（subagent 仅承担词表提取扫描；与用户的术语对齐问答必须在当前 agent 进行）"
       current_agent_allowed: true
       native_current_agent_allowed: false
       native_subagent_allowed: false

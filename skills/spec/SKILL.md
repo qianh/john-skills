@@ -1,6 +1,6 @@
 ---
 name: spec
-version: 1.2.0
+version: 1.3.0
 description: 动态 Spec 编排器。当用户输入 /spec、/spec branch、/spec status、/spec iterate，说"写个 spec/规格驱动"、"帮我规划这个功能/需求/bug 修复/重构/改动"，或要把需求做成可验收的工程产物时触发。
 ---
 
@@ -14,7 +14,7 @@ description: 动态 Spec 编排器。当用户输入 /spec、/spec branch、/spe
 1. **节点动态**：节点数随项目伸缩（3↔9+），由矩阵从五维推出，绝不写死。
 2. **单一事实源**：`spec.md` 是中枢，所有节点往里追加/精炼自己负责的章节；没跑的章节标 `N/A`。
 3. **两道闸人控**：编排闸（开跑前）+ 关键节点闸（规格定稿/审查/合并前）。引擎评分可能误判，关键处必须停。
-4. **无内嵌节点方法**：不得使用框架内置节点方法兜底。推荐依赖缺失时必须提示安装或调整编排，不能悄悄降级。
+4. **无内嵌节点方法**：不得使用框架内置节点方法兜底。推荐依赖缺失时必须提示安装或调整编排，不能悄悄降级。唯一例外：模型直通模式（见铁律 8 例外与 Step 3）。
 5. **跨执行器**：本文（逻辑）执行器无关；命令名、安装名、subagent 支持差异全在 `registry.yaml`（数据）。
 
 ---
@@ -30,9 +30,9 @@ description: 动态 Spec 编排器。当用户输入 /spec、/spec branch、/spe
 5. **每个节点开始前必须打印声明行**（否则不得执行该节点）：
    `▶ {节点} | 框架: {registry 绑定名} | 模式: {current-agent | subagent} | 状态: {bound | blocked:install_required}`
    让用户肉眼看到"现在是谁在执行"。
-6. **需求不清 = 硬闸。** N1 出口门是「真实意图被逼出」。只要还有不理解的概念、模糊的边界、未确认的取舍，就**必须**继续 grill 框架的一问一答（grill-me / grill-with-docs），**不得**带着疑问进入 N3（规格）或 N5（实现）。不懂就问，禁止"根据项目内容自行理解"。
+6. **需求不清 = 硬闸。** N1 出口门是「真实意图被逼出」。只要还有不理解的概念、模糊的边界、未确认的取舍，就**必须**继续 grill 框架的一问一答（grill-me / grill-with-docs），**不得**带着疑问进入 N3（规格）或 N5（实现）。不懂就问，禁止"根据项目内容自行理解"。拷问必须按框架**原生一问一答协议**执行（见 Step 4「N1 拷问执行协议」），不得压缩成一轮选择题。
 7. **支持 subagent 的节点必须让用户选执行模式。** 尤其 N5（实现）、N6（审查）、NS（范围发现）、N2/N4 等：进入前必须 AskUserQuestion 问 `subagent | 当前 agent`。当前环境无 subagent 能力时，亮明原因并让用户选「当前 agent 继续 / 暂停 / 安装或启用」。不得默认替用户决定。
-8. **缺框架必须引导安装，禁止静默自做或绕过。** 被绑框架/工具/agent（grill-me、openspec、taskmaster、tdd-guard、superpowers、Explore 等）探测不可用时，进入 `blocked: install_required`，**必须主动引导安装为首选解法**：从 `references/install.md` 取该框架的【已核实安装命令 + 来源 + 卸载方式 + 前置条件】完整呈现给用户，并用 AskUserQuestion 给「①安装并继续（推荐）｜②改编排去掉该节点/改选已装风味｜③暂停」；用户选①即视为授权，立即按 `references/install.md` 核实 → 安装 → 验证 → 回 Step 3 重新体检。**绝不**因为"框架没装"就退化成当前 agent 自己实现，**也不得**在未先引导安装的情况下默默改编排跳过该框架。
+8. **缺框架必须引导安装，禁止静默自做或绕过。** **唯一例外——模型直通模式**：当前主模型命中 `registry.yaml` 的 `model_overrides.framework_free_models`（如 `gpt-5.6-sol`，检测规则见 Step 3）时，`framework_free.skip_bindings` 清单内的框架**不绑定、不探测、不引导安装**，对应节点以 native current-agent 由模型直接执行——这是该模式下的正式登记方式，不算降级兜底；清单外的绑定（grill 系拷问、NS 扫描等）照常执行本条。除此之外： 被绑框架/工具/agent（grill-me、openspec、taskmaster、tdd-guard、superpowers、Explore 等）探测不可用时，进入 `blocked: install_required`，**必须主动引导安装为首选解法**：从 `references/install.md` 取该框架的【已核实安装命令 + 来源 + 卸载方式 + 前置条件】完整呈现给用户，并用 AskUserQuestion 给「①安装并继续（推荐）｜②改编排去掉该节点/改选已装风味｜③暂停」；用户选①即视为授权，立即按 `references/install.md` 核实 → 安装 → 验证 → 回 Step 3 重新体检。**绝不**因为"框架没装"就退化成当前 agent 自己实现，**也不得**在未先引导安装的情况下默默改编排跳过该框架。
 
 ---
 
@@ -110,10 +110,11 @@ NS 拆为两个子步，顺序执行；greenfield 项目 NS-B 标 N/A，NS-A 仍
 
 ### Step 2 · 矩阵编排
 - 按 `matrix.md` 的矩阵规则，从五维分数推出本次的 **{节点集 + 每节点风味}**：先应用 §2a 升级规则叠加，再应用 §2b 任务类型覆写（覆写优先）。
-- always-on 核心：`N1(轻拷问) → N5 → N7`；老项目额外 always-on `NS`；其余按升级规则叠加。
+- always-on 核心：`N1(聚焦拷问) → N5 → N7`；老项目额外 always-on `NS`；其余按升级规则叠加。（"聚焦拷问"指范围聚焦于核心意图，**不减少追问轮次**——协议见 Step 4「N1 拷问执行协议」。）
 
 ### Step 3 · 依赖体检 + 编排闸（Gate 1 · 硬 STOP）
 - 读 `registry.yaml`。识别当前执行器：环境变量 `CLAUDECODE` 在 → claude-code；否则按 codex。**即便认错，下面"探在不在"也会兜底。**
+- **识别当前主模型（模型直通检测）**：读会话/系统上下文声明的主 agent 模型名，与 `registry.yaml` 的 `model_overrides.framework_free_models` 比对（当前登记：`gpt-5.6-sol`）。**命中 → 本轮进入模型直通模式**：`framework_free.skip_bindings` 内的框架（superpowers 全家及同类 spec/TDD/计划过程框架）一律**不绑定、不探测、不引导安装**，对应节点以 native current-agent 由模型直接执行（该模式下的正式登记方式，铁律 8 例外）；清单外的绑定（grill-me / grill-with-docs 交互拷问、Explore / codebase-analyzer 范围发现等）照常探测绑定。节点集、五维评分、Gate、出口门、spec.md 写入义务**全部不变**，只换"谁来执行"。命中时写入 spec.md front-matter `model_bypass: <模型名>`。无法确认模型名时视为未命中，照常走框架绑定。
 - 对编排出的每个节点，从 `registry.yaml` 取"当前环境"的推荐 `skill`/`tool`/`agent` 候选，**逐一探在不在**（✅可用 / ❌缺失）。第一个可用候选进入依赖绑定清单。
 - **探"在不在"必须覆盖两个来源（禁止只查其中一个）**：
   1. session start 注入的 system-reminder `available skills` 列表（runtime 已聚合，首选）；
@@ -135,10 +136,11 @@ NS 拆为两个子步，顺序执行；greenfield 项目 NS-B 标 N/A，NS-A 仍
 📊 五维评分：任务类型=? 规模=? 风险=? 项目=新/老 领域清晰度=?
 🧩 节点集：N? → N? → ...（共 N 个）
 🔗 每节点绑定：
-   - N1 需求拷问 | 框架: grill-with-docs | 模式: 待选 | 状态: ✅bound
+   - N1 需求拷问 | 框架: grill-with-docs | 模式: current-agent（固定·交互拷问） | 状态: ✅bound
    - N3 规格     | 框架: openspec        | 模式: 待选 | 状态: ❌blocked(install_required)
    - ...
 ⚠️ 缺失依赖：<列出 ❌ 项 + 安装/改编排/暂停选项>
+🧬 模型直通：<未命中（照常框架绑定）｜ 命中：<模型名>，已跳过框架绑定 [<skip 清单中本轮涉及项>]，对应节点 native 执行>
 🤖 模型分层：advisor = {tier_high模型}（NS/N1/N2/N3/N6/N7）| N4 = {tier_high模型}（规格清晰时可在 Gate 1 降为 {tier_mid模型}）| executor = {tier_mid模型}（N5）
    ⚠️ 风险H时 N5 executor 自动升为 {tier_high模型}（矩阵规则触发，无需再选）
    ⚠️ 模型注入只对「以 subagent 派发」的节点生效；选 current-agent 的节点在主 agent（advisor 档）执行，无独立注入；fork 型子代理恒随主模型，注入无效
@@ -148,7 +150,7 @@ NS 拆为两个子步，顺序执行；greenfield 项目 NS-B 标 N/A，NS-A 仍
 
 - 然后用 **AskUserQuestion 开编排闸**，亮出：五维判分（可改）、节点清单+风味、依赖体检（✅/❌）、支持 subagent 的节点逐项给 `①subagent｜②当前 agent`、每个 ❌ 给安装选项（装什么/来源/卸载/前置；选装即授权，按 `references/install.md` 自动核实安装验证）。
 - 若用户不安装：只能改编排去掉该节点、改选另一已可用风味、选该节点显式允许的 native 模式、或暂停；**不得用内嵌方法替代**。
-- **大流程呈现协议（节点多时必读）**：AskUserQuestion 上限 4 问、每问 2-4 选，装不下 9 节点全量闸。按此渲染：①先用**文本**完整呈现上面【编排报告】；②再用 AskUserQuestion 只问**需用户拍板的少数决策**（≤4 问），其余应用默认（五维判分默认接受、支持 subagent 的节点默认 current-agent、缺件默认"改编排去掉该节点"）；③决策多于 4 项时分批问，或合并为一问"是否接受这套编排(含默认)？否则逐项调整"。
+- **大流程呈现协议（节点多时必读）**：AskUserQuestion 上限 4 问、每问 2-4 选，装不下 9 节点全量闸。按此渲染：①先用**文本**完整呈现上面【编排报告】；②再用 AskUserQuestion 只问**需用户拍板的少数决策**（≤4 问），其余应用默认（五维判分默认接受、支持 subagent 的节点默认 current-agent、缺件默认"改编排去掉该节点"）；③决策多于 4 项时分批问，或合并为一问"是否接受这套编排(含默认)？否则逐项调整"。**本协议只约束 Gate 的呈现方式，不适用于 N1 拷问**——N1 按框架原生一问一答协议执行（见 Step 4「N1 拷问执行协议」），其"≤4 问"上限与选择题形态不得外溢到拷问环节。
 - **用户确认/微调后才进 Step 4。** （铁律 2/4）
 
 ### Step 4 · 顺序执行节点（每个节点都委派框架）
@@ -168,6 +170,12 @@ NS 拆为两个子步，顺序执行；greenfield 项目 NS-B 标 N/A，NS-A 仍
    - `⑤ 模型注入（所有 subagent 派发节点通用）`：**仅当节点以 subagent 派发时**，从 `registry.yaml` 的 `executor_model_map[当前执行器]` 取模型名注入 Agent 工具的 `model` 参数——advisor 节点（NS/N1/N2/N3/N6）用 `tier_high`；N4 默认 `tier_high`、规格清晰且 Gate 1 已降档时用 `tier_mid`（读 `N4_tasks.executor_model`）；N5 用 `tier_mid`、风险 H 升 `tier_high`。选 `current-agent` 的节点在主 agent（advisor 档）执行，无独立模型注入；**fork 型子代理恒随主模型，model 参数注入无效**（fork 的价值是继承全上下文，见 registry 的 fork_hint）。**N5 以 subagent 派发时，advisor（当前 agent）不亲自写实现**，只在 N6 读取 executor 产出的 diff 审查；N5 选 `current-agent` 时由当前 agent 调用已绑定 TDD 框架实现（此时无 executor/advisor 分层）。
 2. **写章节**：把框架产物写进 `spec.md` 该节点负责的章节（见 `spec-template.md`）。
 3. **过出口门**：校验该节点出口门（N1 意图被逼出、N7 DoD 全绿……）；不过则不进下一节点。N1 未过**禁止**进 N3/N5（铁律 6）。
+   > **N1 拷问执行协议（mandatory，grill 系框架专属）：** grill-me / grill-with-docs 是交互式访谈框架，进入 N1 后编排器让位，严格按框架**原生协议**执行：
+   > - **一次一问**：纯文本逐问，附推荐答案，等用户回答后再问下一问。AskUserQuestion 只是 Gate 与模式选择的载体，**不得**用它把拷问压缩成一轮 2-4 选项的选择题批发，也不得受其"≤4 问"上限暗示而截断拷问。
+   > - **无问题数上限**："聚焦拷问"指范围聚焦（围绕 goal_condition 相关分支展开），**不指减少轮次**。goal_condition 是参照真北，不是范围围栏：凡影响规格/实现取舍的分支——边界与非目标、失败路径、数据与兼容、方案取舍——都在拷问范围内。
+   > - **结束判据是框架的，不是编排器的**：只有设计树所有分支都已解决（框架原生的 shared understanding）才可过出口门；"够写 spec 章节了""流程还要往下走"不是结束理由。结束前必须自检打印「未决分支清单：空」，非空则继续问。
+   > - **代码/侦察可答的自己答**（框架原生规则）：NS 已侦察到答案的问题不重复问用户，但**不得**以"侦察已覆盖"为由整体跳过或缩短拷问。
+   >
    > **N1 出口门补充（mandatory）：** N1 不只产出「真实意图」，还必须做 Goal Sync：把 N1 逼出的真实意图与 front-matter `goal_condition` 对齐。若真实意图改变，必须在进入 N3 或 N5 前更新 goal_condition，并在「问题与非目标」章节记录旧值、新值、更新原因。若 goal_condition 为空且未被显式豁免，必须 AskUserQuestion 让用户补填可验证条件或明确豁免；否则不得进入 N3/N5。
    > **N4 出口门校验（mandatory）：** 逐条检查每个任务条目是否包含 5 项：① 文件路径+代码摘录 ② scope 边界（in/out-of-scope）③ 验证命令+期望输出 ④ Done 标准（可机器执行 + **transcript-verifiable**：命令将在 N5 执行中被打印，供 /goal 评估器读取；不可写语义判断类条件）⑤ 逃生口。缺任意一项则要求框架补充，**不得进入 N5**。格式参照 `spec-template.md` 的「任务拆解」章节。
 4. **写节点执行追踪（mandatory）**：节点完成后，立即在 `spec.md`「节点执行追踪」表写入该行（列定义见 `spec-template.md`）。**调用证明**必填——如 `Skill("grill-with-docs")`、`Task("Explore")`、`native:命令`；为空 = 未被合法执行。

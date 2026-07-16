@@ -50,7 +50,9 @@
 
 ## 2. 编排矩阵
 
-**always-on 核心（最简 3 节点）**：`N1(轻拷问) → N5 → N7`。**老项目额外 always-on `NS`（跨服务发现，派子代理）——故老项目最简为 4 节点 `NS → N1 → N5 → N7`。**（任务类型覆写见 §2b。）
+**always-on 核心（最简 3 节点）**：`N1(聚焦拷问) → N5 → N7`。**老项目额外 always-on `NS`（跨服务发现，派子代理）——故老项目最简为 4 节点 `NS → N1 → N5 → N7`。**（任务类型覆写见 §2b。）
+
+> **"聚焦拷问"≠少问。** 聚焦指拷问范围围绕核心意图与 goal_condition 相关分支，**轮次与深度不打折**：仍按 grill 框架原生一问一答协议问到无未决分支（协议见 SKILL.md「N1 拷问执行协议」）。不允许因"流程小"而缩短拷问。
 
 ### 2a. 升级规则（逐条叠加）
 
@@ -76,10 +78,12 @@
 
 ## 3. 风味选择规则（dim → flavor）
 
+> **模型直通覆写（绑定层，优先于本表）**：主模型命中 registry `model_overrides.framework_free_models`（如 `gpt-5.6-sol`）时，本表中 superpowers / OpenSpec / sdd / TDD / writing-plans 等过程框架绑定全部跳过，对应节点 native current-agent 由模型直接执行；grill 拷问与 NS 扫描等能力/交互类绑定不受影响。节点集与出口门不变。详见 `registry.yaml` `model_overrides` 与 SKILL.md Step 3。
+
 | 节点 | 规则 |
 |---|---|
 | NS Scope | 老项目强制；派 subagent：CC=`Explore` / Codex=`codebase-analyzer`；扫关联前后端/服务/API/配置/DB/Apollo/回调链，结果写 spec.md；无关联服务则 N/A |
-| N1 拷问/诊断 | **任务类型=bugfix→诊断流**：CC=`superpowers:systematic-debugging`（默认只跑它；仅需全环插桩「复现→最小化→插桩→回归」时改用 `diagnose`，二选一不并跑）、Codex=`systematic-debugging`；否则：有码库→`grill-with-docs`；无码库→`grill-me` |
+| N1 拷问/诊断 | **任务类型=bugfix→诊断流**：CC=`superpowers:systematic-debugging`（默认只跑它；仅需全环插桩「复现→最小化→插桩→回归」时改用 `diagnose`，二选一不并跑）、Codex=`systematic-debugging`；否则：有码库→`grill-with-docs`；无码库→`grill-me`。grill 系一律按原生一问一答协议在当前 agent 执行、不派 subagent（见 SKILL.md「N1 拷问执行协议」） |
 | N3 规格 | CC 装有 OpenSpec skill 时优先 `openspec-propose`；规模 L/M→OpenSpec 工具；规模 H/新项目→`sdd-development`(**仅 Codex**)；**Claude Code 无 sdd 时，OpenSpec 作 env:any 主绑定承接全规模含 H**；风险 H→对抗审查，支持 subagent/当前 agent 选择；验收标准推荐 EARS 格式（见 spec-template） |
 | N4 拆解 | 默认→Superpowers plan / `writing-plans`；仅当用户明确要求时→Taskmaster；支持 subagent/当前 agent 选择 |
 | N5 实现 | 默认 Superpowers TDD + worktree；风险 H→TDD Guard；N3 用 OpenSpec 产出 change 时可辅以 `openspec-apply-change`；多独立任务时支持 subagent/当前 agent 选择 |
