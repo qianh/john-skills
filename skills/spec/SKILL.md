@@ -1,6 +1,6 @@
 ---
 name: spec
-version: 1.3.0
+version: 2.0.0
 description: 动态 Spec 编排器。当用户输入 /spec、/spec branch、/spec status、/spec iterate，说"写个 spec/规格驱动"、"帮我规划这个功能/需求/bug 修复/重构/改动"，或要把需求做成可验收的工程产物时触发。
 ---
 

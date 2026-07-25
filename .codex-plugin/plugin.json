@@ -1,7 +1,7 @@
 {
   "name": "john",
-  "description": "John's personal skill bundle: context loader, KB agent, spec orchestrator, WeChat CLI, music downloader, mydata profiler, git commit helper",
-  "version": "1.3.0",
+  "description": "John's personal skill bundle: spec orchestrator, WeChat CLI, music downloader, git commit helper, image and video generation",
+  "version": "2.0.0",
   "author": {
     "name": "钱宏"
   },
@@ -9,7 +9,7 @@
   "skills": "./skills/",
   "interface": {
     "displayName": "John",
-    "shortDescription": "Personal skills: spec, kb, wechat-cli, music-downloader, mydata, git-commit-helper",
+    "shortDescription": "Personal skills: spec, WeChat, music, Git, image and video generation",
     "category": "Productivity"
   }
 }

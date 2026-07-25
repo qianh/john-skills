@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What This Repo Is
 
-A private Claude Code **plugin package** that exposes personal skills under the `john:` namespace. Once installed, skills are invoked as `john:john`, `john:kb`, `john:spec`, etc. — the same mechanism used by the `superpowers` plugin.
+A private Claude Code **plugin package** that exposes personal skills under the `john:` namespace. Once installed, skills are invoked as `john:spec`, `john:image-gen`, etc. — the same mechanism used by the `superpowers` plugin.
 
 ## Plugin Structure
 
@@ -15,11 +15,10 @@ john-skills/
 │   └── marketplace.json   # Marketplace manifest — makes this repo self-distributable
 ├── package.json            # name: "john" (drives the skill namespace prefix)
 ├── skills/
-│   ├── john/SKILL.md       # Personal context loader
-│   ├── kb/SKILL.md         # Knowledge base agent (+ references/)
+│   ├── image-gen/SKILL.md  # Agnes AI image generation
 │   ├── music-downloader/   # yt-dlp music downloader (+ assets/, references/, scripts/)
-│   ├── mydata/SKILL.md     # Personal data profiling
 │   ├── spec/               # Spec orchestrator (+ matrix.md, registry.yaml, references/, spec-template.md)
+│   ├── video-gen/          # Agnes AI video generation (+ scripts/)
 │   ├── wechat-cli/SKILL.md # WeChat CLI query tool
 │   └── git-commit-helper/  # Git commit helper (+ scripts/)
 └── README.md
@@ -79,11 +78,12 @@ Remove the originals to avoid duplicate skill listings:
 
 ```bash
 # Claude Code originals
-rm -rf ~/.claude/skills/john ~/.claude/skills/kb ~/.claude/skills/music-downloader \
-       ~/.claude/skills/mydata ~/.claude/skills/spec ~/.claude/skills/wechat-cli \
-       ~/.claude/skills/git-commit-helper
+rm -rf ~/.claude/skills/music-downloader ~/.claude/skills/spec \
+       ~/.claude/skills/wechat-cli ~/.claude/skills/git-commit-helper \
+       ~/.claude/skills/image-gen ~/.claude/skills/video-gen
 
 # Codex originals
-rm -rf ~/.codex/skills/john ~/.codex/skills/kb ~/.codex/skills/mydata \
-       ~/.codex/skills/spec ~/.codex/skills/wechat-cli ~/.codex/skills/git-commit-helper
+rm -rf ~/.codex/skills/music-downloader ~/.codex/skills/spec \
+       ~/.codex/skills/wechat-cli ~/.codex/skills/git-commit-helper \
+       ~/.codex/skills/image-gen ~/.codex/skills/video-gen
 ```
