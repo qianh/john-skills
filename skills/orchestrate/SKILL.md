@@ -7,10 +7,10 @@ description: 多模型调度编排。把任务拆成 plan / 执行 / review 三�
 
 主控（用户当前打开的 Provider）只负责**分级 → 路由 → 派发 → 核验 → 汇报**。能自己做的小活不调度。
 
-- 用户配置（**每个人的环境不同，不随 skill 分发**）在 `$(config.sh where)`，默认 `~/.config/orchestrate/`：
+- 用户配置（**每个人的环境不同，不随 skill 分发**）位置用 `config.sh where` 查看，默认 `~/.config/orchestrate/`：
   - `models.conf`：模型别名 × Provider → 模型参数（机器读取）
   - `routing.md`：分级、plan/exec/review 选型偏好、外壳选择规则（你读，用户可编辑）
-- 脚本目录：`~/.claude/skills/john/orchestrate/scripts/`（Codex 等其他环境用本 skill 目录下的 `scripts/`）：`config.sh`（初始化/探测/校验）、`dispatch.sh`（派发）
+- 脚本在 `${CLAUDE_SKILL_DIR}/scripts/`：`config.sh`（初始化/探测/校验）、`dispatch.sh`（派发）。`${CLAUDE_SKILL_DIR}` 即本 skill 所在目录，Claude Code 加载时自动替换；Codex 等不替换的环境，取本 SKILL.md 所在目录。下文裸写的 `config.sh` / `dispatch.sh` 都指这两个脚本，**实际执行时必须写完整路径**（不同安装方式下 skill 所在位置不同，不要假设固定路径）。
 - 与 `john:spec` 的关系：spec 管"需求→工程产物"的流程，orchestrate 只管"模型怎么分工"。spec 的 N5/N6 需要选模型或外壳时可调用本 skill；本 skill 不产出 spec 文档。
 
 ## 流程
@@ -34,7 +34,7 @@ description: 多模型调度编排。把任务拆成 plan / 执行 / review 三�
 - 按 `routing.md §2` 选 planner。主控模型已满足条件时自己 plan，不另派。
 - 派发（只读）：
   ```bash
-  dispatch.sh -p <外壳> -m <模型别名> -r plan -C <项目目录> -f <提示词文件>
+  "${CLAUDE_SKILL_DIR}/scripts/dispatch.sh" -p <外壳> -m <模型别名> -r plan -C <项目目录> -f <提示词文件>
   ```
 - 子模型**看不到当前对话**，提示词必须自包含：目标、背景、约束、相关文件路径、期望输出格式。
 - planner 必须交付**可直接派发的任务清单**，每项含：
@@ -62,7 +62,7 @@ description: 多模型调度编排。把任务拆成 plan / 执行 / review 三�
 
 **外壳**按 `routing.md §5`：默认外壳 = 主控时用主控原生 subagent；否则用 dispatch：
 ```bash
-dispatch.sh -p <外壳> -m <模型别名> -r exec -C <工作目录> -f <提示词文件>
+"${CLAUDE_SKILL_DIR}/scripts/dispatch.sh" -p <外壳> -m <模型别名> -r exec -C <工作目录> -f <提示词文件>
 ```
 多个独立任务在同一条消息里并行发起（后台运行，等通知），不要轮询。
 
@@ -77,7 +77,7 @@ executor 说"通过"不算通过。主控自己运行验收命令并看 `git dif
 - 按 `routing.md §4` 选 reviewer：**不得与该 diff 的 executor 同模型，尽量跨家族**；T2 双审。
 - 派发（只读），提示词给出：需求/plan 摘要、`git diff` 范围、验收结果、输出要求（按 P1/P2 分级，附文件路径+行号，只报真问题）。
   ```bash
-  dispatch.sh -p <外壳> -m <模型别名> -r review -C <项目目录> -f <提示词文件>
+  "${CLAUDE_SKILL_DIR}/scripts/dispatch.sh" -p <外壳> -m <模型别名> -r review -C <项目目录> -f <提示词文件>
   ```
 - 主控对 finding **逐条核对再采信**，不原样转发。
 
