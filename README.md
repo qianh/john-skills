@@ -21,6 +21,6 @@ codex plugin marketplace add qianh/john-skills
 
 ## Skills
 
-`john:spec` · `john:wechat-cli` · `john:music-downloader` · `john:git-commit-helper` · `john:image-gen` · `john:video-gen`
+`john:spec` · `john:orchestrate` · `john:wechat-cli` · `john:music-downloader` · `john:git-commit-helper` · `john:image-gen` · `john:video-gen`
 
 See [CLAUDE.md](CLAUDE.md) for full documentation.
