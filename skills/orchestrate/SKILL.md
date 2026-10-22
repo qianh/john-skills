@@ -10,7 +10,7 @@ description: 多模型调度编排。把任务拆成 plan / 执行 / review 三�
 - 用户配置（**每个人的环境不同，不随 skill 分发**）位置用 `config.sh where` 查看，默认 `~/.config/orchestrate/`：
   - `models.conf`：模型别名 × Provider → 模型参数（机器读取）
   - `routing.md`：分级、plan/exec/review 选型偏好、外壳选择规则（你读，用户可编辑）
-- 脚本在 `${CLAUDE_SKILL_DIR}/scripts/`：`config.sh`（初始化/探测/校验）、`dispatch.sh`（派发）。`${CLAUDE_SKILL_DIR}` 即本 skill 所在目录，Claude Code 加载时自动替换；Codex 等不替换的环境，取本 SKILL.md 所在目录。下文裸写的 `config.sh` / `dispatch.sh` 都指这两个脚本，**实际执行时必须写完整路径**（不同安装方式下 skill 所在位置不同，不要假设固定路径）。
+- 脚本在 `${CLAUDE_SKILL_DIR}/scripts/`：`config.sh`（初始化/探测/校验）、`dispatch.sh`（派发）。路径中的 skill 目录由 Claude Code 加载时自动填入（占位符名为 CLAUDE_SKILL_DIR）；Codex 等不填入、路径里仍是该占位符的环境，取本 SKILL.md 所在目录。下文裸写的 `config.sh` / `dispatch.sh` 都指这两个脚本，**实际执行时必须写完整路径**（不同安装方式下 skill 所在位置不同，不要假设固定路径）。
 - 与 `john:spec` 的关系：spec 管"需求→工程产物"的流程，orchestrate 只管"模型怎么分工"。spec 的 N5/N6 需要选模型或外壳时可调用本 skill；本 skill 不产出 spec 文档。
 
 ## 流程
@@ -22,10 +22,17 @@ description: 多模型调度编排。把任务拆成 plan / 执行 / review 三�
 按 `routing.md §1` 判 T0 / T1 / T2。
 
 - **T0**：直接自己做，不走后续步骤。
-- **T1 / T2**：先输出一张调度计划表，然后**直接推进，不等确认**（用户中途改口就按新要求重排）：
+- **T1 / T2**：开跑前先亮出调度计划，然后**直接推进，不等确认**（用户中途改口就按新要求重排）。固定格式：
 
-  | 步骤 | 模型 | 外壳 | 并行 | 理由 |
-  |---|---|---|---|---|
+  ```
+  这是一个【<任务类型>】类任务，判定 T<n>：<依据：规模 / 风险 / 是否可逆>。
+  调度计划：
+  1. plan：<模型>（<外壳>）            # 主控自己 plan 时写"主控自己"
+  2. 执行：待 plan 拆分后确定，预计 <模型>（<外壳>）
+  3. review：待定，预计 <模型>，原因：<如 reviewer 不能与 executor 同模型>
+  ```
+
+  exec 和 review 要等 plan 交付任务清单才定得下来，所以这里写"预计"；最终分工在 Step 2 之后、派发前再亮一次。
 
   计划里涉及删除数据、部署、改生产配置等不可逆动作时，该动作单独按全局规则确认，不因调度计划整体授权而放行。
 
@@ -47,6 +54,16 @@ description: 多模型调度编排。把任务拆成 plan / 执行 / review 三�
 ### Step 2 · 校验 plan（主控）
 
 主控读完 plan 再放行：文件范围有无重叠、验收命令是否真能跑、依赖是否成环。不合格就让 planner 改，**不自己悄悄改 plan 后假装是 planner 的**。
+
+校验通过后、**派发前必须再亮一次最终分工**，然后直接派发，不等确认：
+
+```
+plan 已完成，拆成 <N> 个任务，最终分工：
+| 任务 | 模型 | 外壳 | 并行 | 理由 |
+|---|---|---|---|---|
+```
+
+后续因验收失败等原因要换模型（如 Step 6 升一档），换之前同样先说明换成谁、为什么。
 
 ### Step 3 · Execute
 
