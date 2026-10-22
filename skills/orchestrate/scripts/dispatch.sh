@@ -38,6 +38,11 @@ fi
 tmp=$(mktemp -d); trap 'rm -rf "$tmp"' EXIT
 if [[ -n $pfile ]]; then cp "$pfile" "$tmp/prompt.md"; else cat > "$tmp/prompt.md"; fi
 [[ -s $tmp/prompt.md ]] || { echo "提示词为空" >&2; exit 2; }
+# 子代理守卫：worker 会读到用户的全局指令（其中有"先判断是否调度"），必须明确禁止它再调度，避免递归
+{
+  printf '【调度约束】你是被 orchestrate 调度的子代理（角色: %s）。不要使用 orchestrate skill，不要再派发子任务或调用其他模型；只完成下面的任务，并按要求汇报。\n\n---\n\n' "$role"
+  cat "$tmp/prompt.md"
+} > "$tmp/prompt.guarded" && mv "$tmp/prompt.guarded" "$tmp/prompt.md"
 
 cd "$dir"
 case "$provider" in

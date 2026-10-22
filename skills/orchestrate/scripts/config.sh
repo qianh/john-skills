@@ -6,6 +6,9 @@
 #   config.sh init             创建配置目录：用 detect 的结果生成 models.conf 骨架（候选行全部注释），
 #                              并复制 routing.md 示例；已存在的文件保留，不覆盖
 #   config.sh check [--probe]  校验 models.conf 与 routing.md；--probe 对每行发一次最小请求实测（会消耗少量 token）
+#   config.sh instructions status|install|remove [--target claude|codex|pi|grok|all] [--dry-run]
+#                              在各 Provider 的全局指令文件里写入/移除"动手前先判断是否调度"的指引（仅改标记块，先备份）；
+#                              codex / pi 看不到 skill 时额外建 ~/.agents/skills/orchestrate 软链。grok 读 CLAUDE.md，随 claude 覆盖
 #
 # 配置目录: $ORCHESTRATE_HOME，否则 ${XDG_CONFIG_HOME:-~/.config}/orchestrate
 set -euo pipefail
@@ -130,10 +133,175 @@ cmd_check() {
   return $bad
 }
 
+# ---------- instructions：把"动手前先判断是否调度"的指引写入各 Provider 的全局指令文件 ----------
+# 只改文件里 orchestrate:begin/end 标记块，块外内容一字不动；写入前备份到 $CONF_DIR/backups/
+AGENTS_SKILLS_DIR="$HOME/.agents/skills"
+
+instr_block() {
+  cat << 'EOF'
+<!-- orchestrate:begin v1 -->
+## 多模型调度（orchestrate）
+
+多步骤任务动手前，先按以下标准判断是否值得多模型调度：跨多模块 / 碰钱·权限·迁移·生产 / 方案模糊 / 需要独立 review / 可并行拆分。
+满足任一条才加载 `orchestrate` skill（Claude Code 中为 `john:orchestrate`）；单点小改动直接做，不加载。
+若提示词声明你是被调度的 planner / executor / reviewer，不得再调度。
+<!-- orchestrate:end -->
+EOF
+}
+
+claude_dir() { echo "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"; }
+
+# 各 Provider 的全局指令文件。grok 直接读 Claude 的 CLAUDE.md，与 claude 共用；
+# pi 只取目录里第一个命中的候选文件（顺序见其 resource-loader），都不存在则新建 AGENTS.md
+instr_file() {
+  local d f
+  case $1 in
+    claude|grok) echo "$(claude_dir)/CLAUDE.md" ;;
+    codex)
+      d=${CODEX_HOME:-$HOME/.codex}
+      if [[ -e $d/AGENTS.override.md ]]; then echo "$d/AGENTS.override.md"; else echo "$d/AGENTS.md"; fi ;;
+    pi)
+      d=${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}
+      for f in AGENTS.override.md AGENTS.md AGENTS.MD CLAUDE.md CLAUDE.MD; do
+        if [[ -f $d/$f ]]; then echo "$d/$f"; return; fi
+      done
+      echo "$d/AGENTS.md" ;;
+  esac
+}
+
+# 该 Provider 当前能否加载到 orchestrate skill
+skill_visible() {
+  case $1 in
+    claude|grok) grep -q '"john@' "$(claude_dir)/plugins/installed_plugins.json" 2> /dev/null || [[ -e $(claude_dir)/skills/john ]] ;;
+    codex) [[ -f $AGENTS_SKILLS_DIR/orchestrate/SKILL.md || -f ${CODEX_HOME:-$HOME/.codex}/skills/orchestrate/SKILL.md ]] \
+      || { codex plugin list 2> /dev/null | grep -q '^john@'; } ;;
+    pi) [[ -f $AGENTS_SKILLS_DIR/orchestrate/SKILL.md || -f ${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}/skills/orchestrate/SKILL.md ]] ;;
+  esac
+}
+
+# codex / pi 默认扫描 ~/.agents/skills；skill 不可见时建软链（两者共用），指向旧版本或悬空时刷新
+expose_skill() {
+  local link="$AGENTS_SKILLS_DIR/orchestrate"
+  if [[ -L $link ]]; then
+    [[ $(readlink "$link") == "$SKILL_DIR" ]] && { echo "  skill 软链已指向当前版本: $link"; return 0; }
+    echo "  skill 软链需刷新: $link -> $SKILL_DIR"
+  elif [[ -e $link ]]; then
+    echo "  WARN  $link 已存在且不是软链，不改动；请自行确认它是 orchestrate skill"; return 0
+  else
+    echo "  skill 对该 Provider 不可见，将创建软链: $link -> $SKILL_DIR"
+  fi
+  if ((DRY)); then echo "  (dry-run，未创建)"; return 0; fi
+  mkdir -p "$AGENTS_SKILLS_DIR" && ln -sfn "$SKILL_DIR" "$link" && echo "  已创建/刷新软链"
+}
+
+instr_extract() { awk '/<!-- orchestrate:begin/ { f = 1 } f { print } /<!-- orchestrate:end -->/ { f = 0 }' "$1"; }
+
+instr_backup() { # target file → 打印备份路径
+  local b
+  mkdir -p "$CONF_DIR/backups" || return 1
+  # mktemp 保证文件名唯一，避免同一秒内的多次备份互相覆盖；cp -p 保留原权限
+  b=$(mktemp "$CONF_DIR/backups/$1-$(basename "$2").$(date +%Y%m%d-%H%M%S).XXXXXX") || return 1
+  cp -p "$2" "$b" && echo "$b"
+}
+
+instr_targets() {
+  local t out=""
+  if [[ $1 == all ]]; then
+    for t in claude codex pi grok; do command -v "$t" > /dev/null && out="$out $t"; done
+  else
+    case $1 in claude|codex|pi|grok) out=$1 ;; *) echo "未知 --target: $1（应为 claude|codex|pi|grok|all）" >&2; exit 2 ;; esac
+  fi
+  echo $out
+}
+
+instr_status() {
+  local t=$1 file=$2 state="未写入" vis="不可用"
+  if [[ -f $file ]] && grep -q 'orchestrate:begin' "$file"; then
+    instr_extract "$file" > "$TMP/cur"; instr_block > "$TMP/new"
+    if cmp -s "$TMP/cur" "$TMP/new"; then state="已写入（最新）"; else state="已写入（内容过期，install 可更新）"; fi
+  fi
+  skill_visible "$t" && vis="可用"
+  echo "[$t] ${file}  指引: ${state}  skill: ${vis}"
+}
+
+instr_install() {
+  local t=$1 file=$2 b
+  echo "[$t] 目标文件: $file"
+  instr_block > "$TMP/block"
+  if [[ ! -f $file ]]; then
+    cp "$TMP/block" "$TMP/new"
+  elif grep -q 'orchestrate:begin' "$file"; then
+    grep -q 'orchestrate:end' "$file" || { echo "  FAIL  只有 begin 标记没有 end 标记，拒绝改动，请手工修复"; return 1; }
+    awk -v bf="$TMP/block" '
+      /<!-- orchestrate:begin/ { while ((getline l < bf) > 0) print l; close(bf); skip = 1; next }
+      skip && /<!-- orchestrate:end -->/ { skip = 0; next }
+      !skip { print }' "$file" > "$TMP/new"
+  else
+    { cat "$file"; if [[ -s $file ]]; then [[ -n $(tail -c1 "$file") ]] && echo; echo; fi; cat "$TMP/block"; } > "$TMP/new"
+  fi
+  if [[ -f $file ]] && cmp -s "$file" "$TMP/new"; then
+    echo "  指引已是最新，无需改动"
+  else
+    echo "  变更预览:"
+    if [[ -f $file ]]; then diff -u "$file" "$TMP/new" | sed 's/^/    /' || true; else sed 's/^/    + /' "$TMP/new"; fi
+    if ((DRY)); then
+      echo "  (dry-run，未写入)"
+    else
+      b=""; [[ -f $file ]] && b=$(instr_backup "$t" "$file")
+      mkdir -p "$(dirname "$file")" && cat "$TMP/new" > "$file"
+      echo "  已写入${b:+；原文件备份: $b}"
+    fi
+  fi
+  case $t in codex|pi) if [[ -L $AGENTS_SKILLS_DIR/orchestrate ]] || ! skill_visible "$t"; then expose_skill; fi ;; esac
+}
+
+instr_remove() {
+  local t=$1 file=$2 b
+  echo "[$t] 目标文件: $file"
+  if [[ ! -f $file ]] || ! grep -q 'orchestrate:begin' "$file"; then echo "  未写入，无需移除"; return 0; fi
+  grep -q 'orchestrate:end' "$file" || { echo "  FAIL  只有 begin 标记没有 end 标记，拒绝改动，请手工修复"; return 1; }
+  # 删除标记块，并丢掉紧邻其前的一个空行（install 追加时加的）
+  awk '
+    /^$/ && !skip { n++; next }
+    /<!-- orchestrate:begin/ { skip = 1; n = (n > 0 ? n - 1 : 0); next }
+    skip { if (/<!-- orchestrate:end -->/) skip = 0; next }
+    { for (; n > 0; n--) print ""; print }
+    END { for (; n > 0; n--) print "" }' "$file" > "$TMP/new"
+  if ((DRY)); then echo "  变更预览:"; diff -u "$file" "$TMP/new" | sed 's/^/    /' || true; echo "  (dry-run，未写入)"; return 0; fi
+  b=$(instr_backup "$t" "$file")
+  if [[ -z $(tr -d '[:space:]' < "$TMP/new") ]]; then rm -f "$file"; echo "  已移除；文件仅含该块，已一并删除；备份: $b"
+  else cat "$TMP/new" > "$file"; echo "  已移除；备份: $b"; fi
+  case $t in codex|pi) [[ -L $AGENTS_SKILLS_DIR/orchestrate ]] && echo "  软链 $AGENTS_SKILLS_DIR/orchestrate 保留（codex/pi 共用），不再需要时请手动删除" ;; esac
+}
+
+cmd_instructions() {
+  local action=${1:-status} target=all t file seen=$'\n' list
+  shift || true
+  DRY=0
+  while (($#)); do
+    case $1 in
+      --target) target=${2:-}; shift 2 ;;
+      --dry-run) DRY=1; shift ;;
+      *) echo "未知参数: $1" >&2; exit 2 ;;
+    esac
+  done
+  case $action in status|install|remove) ;; *) sed -n 2,13p "$0" >&2; exit 2 ;; esac
+  list=$(instr_targets "$target")
+  [[ -n $list ]] || { echo "未检测到已安装的 claude / codex / pi / grok，没有可处理的目标"; return 0; }
+  TMP=$(mktemp -d); trap "rm -rf '$TMP'" EXIT
+  for t in $list; do
+    file=$(instr_file "$t")
+    if [[ $seen == *$'\n'"$file"$'\n'* ]]; then echo "[$t] 与前一目标共用 ${file}，已一并覆盖"; continue; fi
+    seen="$seen$file"$'\n'
+    "instr_$action" "$t" "$file"
+  done
+}
+
 case "${1:-}" in
-  where)  cmd_where ;;
-  detect) cmd_detect ;;
-  init)   cmd_init ;;
-  check)  shift; cmd_check "$@" ;;
-  *) sed -n 2,10p "$0" >&2; exit 2 ;;
+  where)        cmd_where ;;
+  detect)       cmd_detect ;;
+  init)         cmd_init ;;
+  check)        shift; cmd_check "$@" ;;
+  instructions) shift; cmd_instructions "$@" ;;
+  *) sed -n 2,13p "$0" >&2; exit 2 ;;
 esac
