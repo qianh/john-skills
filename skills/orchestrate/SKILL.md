@@ -104,7 +104,7 @@ executor 说"通过"不算通过。主控自己运行验收命令并看 `git dif
 
 1. `config.sh init`：创建配置目录；`models.conf` 由本机探测结果生成骨架（**候选行全部注释，需启用**），`routing.md` 复制示例。**已存在的文件不覆盖**。
 2. `config.sh detect`：列出本机已安装的 Provider 和各自可用的模型 ID（只读）。claude 没有列表命令，其 ID 向用户确认。
-3. 在 `models.conf` 骨架里启用候选行（候选行即 detect 的真实 ID；`references/models.sample.conf` 是作者环境的样本，仅供参考写法，**不要照抄其中的 ID**），**所有模型 ID 必须来自 detect 输出或用户明确给出，不得猜**：
+3. 把要用的候选行复制到 `models.conf` 的「已启用」区（**行序即优先级：同一别名的第一行是默认外壳**，别在候选区就地取消注释；候选行即 detect 的真实 ID；`references/models.sample.conf` 是作者环境的样本，仅供参考写法，**不要照抄其中的 ID**），**所有模型 ID 必须来自 detect 输出或用户明确给出，不得猜**：
    - 用户用到哪些 Provider、想用哪些模型（用 AskUserQuestion 逐项确认，别替用户决定）。
    - 每个别名按"默认外壳放第一行、兜底放后面"写行。别名自己起，要和 `routing.md` 一致。
 4. 按用户的模型清单改写 `routing.md` 的选型偏好（示例是作者的偏好，只当起点）。只有一个 Provider/模型时如实简化，别硬凑多模型。
