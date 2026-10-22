@@ -13,8 +13,8 @@
         "source": "url",
         "url": "https://github.com/qianh/john-skills.git"
       },
-      "description": "Personal skill bundle: spec orchestrator, WeChat CLI, music downloader, git commit helper, image and video generation",
-      "version": "2.0.0",
+      "description": "Personal skill bundle: spec orchestrator, multi-model orchestrate, WeChat CLI, music downloader, git commit helper, image and video generation",
+      "version": "2.1.0",
       "strict": true
     }
   ]
