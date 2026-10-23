@@ -139,10 +139,10 @@ AGENTS_SKILLS_DIR="$HOME/.agents/skills"
 
 instr_block() {
   cat << 'EOF'
-<!-- orchestrate:begin v1 -->
+<!-- orchestrate:begin v2 -->
 ## 多模型调度（orchestrate）
 
-多步骤任务动手前，先按以下标准判断是否值得多模型调度：跨多模块 / 碰钱·权限·迁移·生产 / 方案模糊 / 需要独立 review / 可并行拆分。
+多步骤任务动手前，先按以下标准判断是否值得多模型调度：跨多模块 / 碰钱·权限·迁移·生产 / 方案模糊 / 需要独立 review / 可并行拆分 / 大范围审阅评审（文档、方案、代码，适合多个模型交叉核验）。
 满足任一条才加载 `orchestrate` skill（Claude Code 中为 `john:orchestrate`）；单点小改动直接做，不加载。
 若提示词声明你是被调度的 planner / executor / reviewer，不得再调度。
 <!-- orchestrate:end -->

@@ -1,6 +1,6 @@
 {
   "name": "john",
-  "version": "2.1.3",
+  "version": "2.1.4",
   "description": "John's personal Claude Code + Codex skill plugin",
   "type": "module"
 }
