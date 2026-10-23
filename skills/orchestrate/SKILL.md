@@ -133,7 +133,7 @@ executor 说"通过"不算通过。主控自己运行验收命令并看 `git dif
 6. **全局指引**（可选，需用户同意）：让各 Provider "动手前先判断是否调度"，不必每次带触发词。
    - `config.sh instructions status` 看各已安装 Provider 的现状（claude / codex / pi；grok 直接读 `~/.claude/CLAUDE.md`，随 claude 覆盖）。
    - `config.sh instructions install --dry-run` 把**将写入的变更逐个展示给用户**，再用 AskUserQuestion 征得同意；同意后去掉 `--dry-run` 执行。只改文件里 `orchestrate:begin/end` 标记块，写入前备份到 `$(config.sh where)/backups/`。
-   - codex / pi 默认看不到 skill 时，`install` 会建软链 `~/.agents/skills/orchestrate`（两者共用）。
+   - pi 默认看不到 skill，`install` 会建软链 `~/.pi/agent/skills/orchestrate`；codex 没装插件时才建 `~/.agents/skills/orchestrate`（装了插件就不建，避免重复加载；旧版本留下的共用软链会被迁移掉）。
    - 用户拒绝就跳过，之后随时可补；想撤销用 `instructions remove`。
 7. 汇报：配置目录位置、可用组合表、全局指引写入情况、WARN/FAIL 及处理结果。
 

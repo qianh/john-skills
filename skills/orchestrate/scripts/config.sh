@@ -8,7 +8,7 @@
 #   config.sh check [--probe]  校验 models.conf 与 routing.md；--probe 对每行发一次最小请求实测（会消耗少量 token）
 #   config.sh instructions status|install|remove [--target claude|codex|pi|grok|all] [--dry-run]
 #                              在各 Provider 的全局指令文件里写入/移除"动手前先判断是否调度"的指引（仅改标记块，先备份）；
-#                              codex / pi 看不到 skill 时额外建 ~/.agents/skills/orchestrate 软链。grok 读 CLAUDE.md，随 claude 覆盖
+#                              pi 看不到 skill 时建 ~/.pi/agent/skills/orchestrate 软链；codex 未装插件时建 ~/.agents/skills/orchestrate 软链。grok 读 CLAUDE.md，随 claude 覆盖
 #
 # 配置目录: $ORCHESTRATE_HOME，否则 ${XDG_CONFIG_HOME:-~/.config}/orchestrate
 set -euo pipefail
@@ -173,15 +173,22 @@ instr_file() {
 skill_visible() {
   case $1 in
     claude|grok) grep -q '"john@' "$(claude_dir)/plugins/installed_plugins.json" 2> /dev/null || [[ -e $(claude_dir)/skills/john ]] ;;
-    codex) [[ -f $AGENTS_SKILLS_DIR/orchestrate/SKILL.md || -f ${CODEX_HOME:-$HOME/.codex}/skills/orchestrate/SKILL.md ]] \
-      || { codex plugin list 2> /dev/null | grep -q '^john@'; } ;;
-    pi) [[ -f $AGENTS_SKILLS_DIR/orchestrate/SKILL.md || -f ${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}/skills/orchestrate/SKILL.md ]] ;;
+    codex) codex_native || [[ -f $AGENTS_SKILLS_DIR/orchestrate/SKILL.md ]] ;;
+    pi) [[ -f $(pi_dir)/skills/orchestrate/SKILL.md || -f $AGENTS_SKILLS_DIR/orchestrate/SKILL.md ]] ;;
   esac
 }
 
-# codex / pi 默认扫描 ~/.agents/skills；skill 不可见时建软链（两者共用），指向旧版本或悬空时刷新
-expose_skill() {
-  local link="$AGENTS_SKILLS_DIR/orchestrate"
+pi_dir() { echo "${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}"; }
+
+# codex 自带途径能否加载：插件安装，或 ~/.codex/skills 下有该 skill（不含 ~/.agents/skills 软链）
+codex_native() {
+  [[ -f ${CODEX_HOME:-$HOME/.codex}/skills/orchestrate/SKILL.md ]] || { codex plugin list 2> /dev/null | grep -q '^john@'; }
+}
+
+# skill 不可见时建软链，指向旧版本或悬空时刷新。pi 链到自己的 skills 目录（~/.agents/skills 会被 codex 一并扫到，
+# 与 codex 插件重复加载）；codex 只有在没装插件时才链到 ~/.agents/skills
+expose_skill() { # $1=skills 目录
+  local dir=$1 link="$1/orchestrate"
   if [[ -L $link ]]; then
     [[ $(readlink "$link") == "$SKILL_DIR" ]] && { echo "  skill 软链已指向当前版本: $link"; return 0; }
     echo "  skill 软链需刷新: $link -> $SKILL_DIR"
@@ -191,7 +198,20 @@ expose_skill() {
     echo "  skill 对该 Provider 不可见，将创建软链: $link -> $SKILL_DIR"
   fi
   if ((DRY)); then echo "  (dry-run，未创建)"; return 0; fi
-  mkdir -p "$AGENTS_SKILLS_DIR" && ln -sfn "$SKILL_DIR" "$link" && echo "  已创建/刷新软链"
+  mkdir -p "$dir" && ln -sfn "$SKILL_DIR" "$link" && echo "  已创建/刷新软链"
+}
+
+# 旧版本把 pi 和 codex 共用的软链放在 ~/.agents/skills；codex 已有自带途径时它会造成重复加载，迁移掉
+# （pi 已安装但还没有自己的软链时先保留，等 pi 迁移完再清）
+cleanup_legacy_link() {
+  local link="$AGENTS_SKILLS_DIR/orchestrate"
+  [[ -L $link && $(basename "$(readlink "$link")") == orchestrate ]] || return 0
+  if command -v pi > /dev/null && [[ ! -f $(pi_dir)/skills/orchestrate/SKILL.md ]]; then
+    echo "  旧软链 $link 暂留：pi 尚未迁移到自己的 skills 目录（install --target pi 后再清）"; return 0
+  fi
+  echo "  codex 已自带该 skill，旧软链会造成重复加载，将移除: $link"
+  if ((DRY)); then echo "  (dry-run，未移除)"; return 0; fi
+  rm -f "$link" && echo "  已移除旧软链"
 }
 
 instr_extract() { awk '/<!-- orchestrate:begin/ { f = 1 } f { print } /<!-- orchestrate:end -->/ { f = 0 }' "$1"; }
@@ -207,7 +227,7 @@ instr_backup() { # target file → 打印备份路径
 instr_targets() {
   local t out=""
   if [[ $1 == all ]]; then
-    for t in claude codex pi grok; do command -v "$t" > /dev/null && out="$out $t"; done
+    for t in claude pi codex grok; do command -v "$t" > /dev/null && out="$out $t"; done
   else
     case $1 in claude|codex|pi|grok) out=$1 ;; *) echo "未知 --target: $1（应为 claude|codex|pi|grok|all）" >&2; exit 2 ;; esac
   fi
@@ -252,7 +272,10 @@ instr_install() {
       echo "  已写入${b:+；原文件备份: $b}"
     fi
   fi
-  case $t in codex|pi) if [[ -L $AGENTS_SKILLS_DIR/orchestrate ]] || ! skill_visible "$t"; then expose_skill; fi ;; esac
+  case $t in
+    pi) expose_skill "$(pi_dir)/skills" ;;
+    codex) if codex_native; then cleanup_legacy_link; else expose_skill "$AGENTS_SKILLS_DIR"; fi ;;
+  esac
 }
 
 instr_remove() {
@@ -271,7 +294,11 @@ instr_remove() {
   b=$(instr_backup "$t" "$file")
   if [[ -z $(tr -d '[:space:]' < "$TMP/new") ]]; then rm -f "$file"; echo "  已移除；文件仅含该块，已一并删除；备份: $b"
   else cat "$TMP/new" > "$file"; echo "  已移除；备份: $b"; fi
-  case $t in codex|pi) [[ -L $AGENTS_SKILLS_DIR/orchestrate ]] && echo "  软链 $AGENTS_SKILLS_DIR/orchestrate 保留（codex/pi 共用），不再需要时请手动删除" ;; esac
+  case $t in
+    pi) [[ -L $(pi_dir)/skills/orchestrate ]] && echo "  软链 $(pi_dir)/skills/orchestrate 保留，不再需要时请手动删除" ;;
+    codex) [[ -L $AGENTS_SKILLS_DIR/orchestrate ]] && echo "  软链 $AGENTS_SKILLS_DIR/orchestrate 保留，不再需要时请手动删除" ;;
+  esac
+  return 0
 }
 
 cmd_instructions() {
