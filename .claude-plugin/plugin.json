@@ -1,7 +1,7 @@
 {
   "name": "john",
   "description": "John's personal skill bundle: spec orchestrator, multi-model orchestrate, WeChat CLI, music downloader, git commit helper, image and video generation",
-  "version": "2.1.4",
+  "version": "2.2.0",
   "author": {
     "name": "钱宏"
   },

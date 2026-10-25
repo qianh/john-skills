@@ -17,7 +17,7 @@ john-skills/
 ├── skills/
 │   ├── image-gen/SKILL.md  # Agnes AI image generation
 │   ├── music-downloader/   # yt-dlp music downloader (+ assets/, references/, scripts/)
-│   ├── orchestrate/        # Multi-model orchestration: plan/exec/review routing over claude, codex, grok, pi (+ routing.example.md, references/models.sample.conf, scripts/{config,dispatch}.sh; user config lives in ~/.config/orchestrate/)
+│   ├── orchestrate/        # Multi-model orchestration: plan/exec/review routing over claude, codex, grok, pi (+ routing.example.md, references/models.sample.conf, scripts/{config,dispatch,run}.sh; user config lives in ~/.config/orchestrate/)
 │   ├── spec/               # Spec orchestrator (+ matrix.md, registry.yaml, references/, spec-template.md)
 │   ├── video-gen/          # Agnes AI video generation (+ scripts/)
 │   ├── wechat-cli/SKILL.md # WeChat CLI query tool
