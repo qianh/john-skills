@@ -139,10 +139,10 @@ AGENTS_SKILLS_DIR="$HOME/.agents/skills"
 
 instr_block() {
   cat << 'EOF'
-<!-- orchestrate:begin v3 -->
+<!-- orchestrate:begin v4 -->
 ## 多模型调度（orchestrate）
 
-每个需要动手（读、改、运行、排查）的任务，开始前先加载 `orchestrate` skill（Claude Code 中为 `john:orchestrate`）并按它分级，**不能跳过**：
+本会话第一个需要动手（读、改、运行、排查）的任务开始前，加载一次 `orchestrate` skill（Claude Code 中为 `john:orchestrate`）。**已加载过就不再重复加载**，直接按已在上下文中的内容给每个任务分级，不能跳过分级；上下文被压缩、skill 内容已不在时才重新加载：
 - 需要多模型（跨多模块 / 碰钱·权限·迁移·生产 / 方案模糊 / 需要独立 review / 可并行拆分 / 大范围审阅评审）→ 按 skill 调度。
 - 不需要 → 也要先明说一句"当前任务无需多模型，以 <模型>（<外壳>）单独执行"，模型从 skill 的执行层选择，不限于主控自己的模型。
 纯闲聊、不涉及任何工具调用的一句话问答，不必加载。

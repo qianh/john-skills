@@ -1,6 +1,6 @@
 ---
 name: orchestrate
-description: 多模型调度编排。把任务拆成 plan / 执行 / review 三段，按用户配置的路由偏好选模型，并通过 claude、codex、grok、pi 四个 Provider 的无头调用把子任务派给不同模型。每个需要动手（读、改、运行、排查）的任务开始前都应加载本 skill 做分级。当用户输入 /orchestrate、说"调度/编排多个模型"、"让 X 模型来 plan/做/review"、"用不同模型分工完成这个任务"、"多模型协作/并行执行"时触发。
+description: 多模型调度编排。把任务拆成 plan / 执行 / review 三段，按用户配置的路由偏好选模型，并通过 claude、codex、grok、pi 四个 Provider 的无头调用把子任务派给不同模型。会话中第一个需要动手（读、改、运行、排查）的任务前加载一次，之后每个任务都按它分级，不重复加载。当用户输入 /orchestrate、说"调度/编排多个模型"、"让 X 模型来 plan/做/review"、"用不同模型分工完成这个任务"、"多模型协作/并行执行"时触发。
 ---
 
 # Orchestrate · 多模型调度
