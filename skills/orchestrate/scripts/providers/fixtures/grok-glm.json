@@ -1,0 +1,23 @@
+{
+  "text": "pong",
+  "stopReason": "end_turn",
+  "sessionId": "01a171fa-51a1-72b0-a6ea-2c1e3c6b51dc",
+  "usage": {
+    "input_tokens": 17557,
+    "output_tokens": 3,
+    "cache_read_input_tokens": 0,
+    "cache_creation_input_tokens": 0,
+    "reasoning_tokens": 0,
+    "total_tokens": 17560
+  },
+  "modelUsage": {
+    "glm-5.3-flash": {
+      "inputTokens": 17557,
+      "outputTokens": 3,
+      "cacheReadInputTokens": 0,
+      "cacheCreationInputTokens": 0,
+      "modelCalls": 1,
+      "costUSD": 0
+    }
+  }
+}

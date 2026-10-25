@@ -1,0 +1,2 @@
+{"type":"session","id":"01a171f6-c1d9-7527-a755-6bfbcda94916"}
+{"type":"message_end","message":{"role":"assistant","model":"zhipu/glm-5.3-flash","content":[{"type":"text","text":"pong"}],"usage":{"input":19,"output":12,"cacheRead":7040,"cacheWrite":0,"reasoning":9,"totalTokens":7071,"cost":{"input":0.00000227,"output":0.00000502,"cacheRead":0.00024189,"cacheWrite":0,"total":0.00024918}},"thinkingLevel":"high"}}
