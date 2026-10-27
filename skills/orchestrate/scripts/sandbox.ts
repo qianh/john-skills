@@ -1,4 +1,4 @@
-import { existsSync, realpathSync, writeFileSync } from "node:fs"
+import { existsSync, readFileSync, realpathSync, writeFileSync } from "node:fs"
 import { homedir } from "node:os"
 import path from "node:path"
 import { type Plan } from "./contracts.ts"
@@ -47,6 +47,13 @@ const regexLiteral = (s: string) => {
 const real = (s: string) => existsSync(s) ? realpathSync(s) : path.resolve(s)
 export const credentialPaths = [".ssh", ".aws", ".azure", ".config/gcloud", ".kube", ".docker/config.json", ".npmrc", ".pypirc", ".netrc", ".git-credentials", ".config/gh", ".gnupg", ".config/orchestrate", ".claude", ".grok", ".codex", ".pi"]
 
+export function gitWriteDenyPaths(cwd: string, gitDir: string): string[] {
+  const paths = [real(gitDir), real(path.join(real(cwd), ".git"))]
+  const commonFile = path.join(gitDir, "commondir")
+  if (existsSync(commonFile)) paths.push(real(path.resolve(gitDir, readFileSync(commonFile, "utf8").trim())))
+  return [...new Set(paths)]
+}
+
 function globRegex(glob: string): string {
   if (/[{}[\]\\]/.test(glob)) throw new Error(`沙箱暂不支持此 sensitive_extra glob，拒绝裸跑：${glob}`)
   let result = ""
@@ -74,10 +81,7 @@ export interface SandboxOptions {
 }
 export function sandboxProfile(options: SandboxOptions): string {
   const cwd = real(options.cwd), temp = real(options.tmpDir), gitDir = real(options.gitDir)
-  const rules = ["(version 1)", "(allow default)", "(deny file-write*)", `(allow file-write* (literal "/dev/null") (subpath ${quote(cwd)}) (subpath ${quote(temp)})${(options.extraWritable ?? []).map((p) => ` (subpath ${quote(real(p.replace(/^~(?=\/)/, homedir())))})`).join("")})`, `(deny file-write* (subpath ${quote(gitDir)}) (subpath ${quote(path.join(cwd, ".git"))}))`]
-  // A linked worktree's common object/ref directory is outside its own git-dir.
-  const common = path.resolve(gitDir, "../..")
-  if (gitDir.includes(`${path.sep}worktrees${path.sep}`)) rules.push(`(deny file-write* (subpath ${quote(common)}))`)
+  const rules = ["(version 1)", "(allow default)", "(deny file-write*)", `(allow file-write* (literal "/dev/null") (subpath ${quote(cwd)}) (subpath ${quote(temp)})${(options.extraWritable ?? []).map((p) => ` (subpath ${quote(real(p.replace(/^~(?=\/)/, homedir())))})`).join("")})`, `(deny file-write* ${gitWriteDenyPaths(cwd, gitDir).map((p) => `(subpath ${quote(p)})`).join(" ")})`]
   if (!options.allow.includes("network:*")) rules.push("(deny network*)")
   rules.push(`(deny file-read* (require-all (regex ${regexLiteral(`(^|/)${ciLiteral(".env")}($|\\.)`)}) (require-not (regex ${regexLiteral(`\\.(${["example", "sample", "template"].map(ciLiteral).join("|")})$`)}))))`)
   const bases = [".npmrc", ".pypirc", ".netrc", ".git-credentials", ".aws", ".ssh", "secrets"].map(ciLiteral)

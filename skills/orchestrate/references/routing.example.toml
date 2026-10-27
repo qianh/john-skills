@@ -18,7 +18,6 @@ timeout_min = 15
 
 [positions.exec]
 effort = "high"
-default_pool = "standard"
 timeout_min = 30
 
 [positions.exec.pools]

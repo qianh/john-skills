@@ -1,8 +1,8 @@
 import { afterEach, expect, test } from "bun:test"
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import path from "node:path"
-import { commandPermissions, missingPermissions, parseAllow, routeAdmission, sandboxProfile, verifyCommand, type SandboxOptions } from "./sandbox.ts"
+import { commandPermissions, gitWriteDenyPaths, missingPermissions, parseAllow, routeAdmission, sandboxProfile, verifyCommand, type SandboxOptions } from "./sandbox.ts"
 import type { Plan } from "./contracts.ts"
 const roots: string[] = []
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }) })
@@ -26,6 +26,21 @@ test("profile generation never widens domain-only networking", () => {
   expect(sandboxProfile(options)).toContain("(deny network*)")
   expect(sandboxProfile({ ...options, allow: ["network:*"] })).not.toContain("(deny network*)")
   expect(() => sandboxProfile({ ...options, sensitiveExtra: ["secrets/[a-z]*"] })).toThrow("拒绝裸跑")
+})
+test("worktree metadata protection is shared with execution, including a nonstandard common directory", async () => {
+  const root = mkdtempSync(path.join(tmpdir(), "orch-worktree-sandbox-")); roots.push(root)
+  const cwd = path.join(root, "workspace"), common = path.join(cwd, "shared-meta"), gitDir = path.join(cwd, "private-meta"), tmpDir = path.join(root, "temp")
+  for (const dir of [cwd, common, gitDir, tmpDir]) mkdirSync(dir)
+  writeFileSync(path.join(gitDir, "commondir"), "../shared-meta\n")
+  const denied = gitWriteDenyPaths(cwd, gitDir)
+  expect(denied).toEqual([realpathSync(gitDir), path.join(realpathSync(cwd), ".git"), realpathSync(common)])
+  const options = { cwd, gitDir, tmpDir, allow: [] }
+  const profile = sandboxProfile(options)
+  for (const dir of denied) expect(profile).toContain(`(subpath ${JSON.stringify(dir)})`)
+  if (process.platform === "darwin" && Bun.which("sandbox-exec")) {
+    for (const dir of [common, gitDir]) expect((await verifyCommand(`printf unsafe > ${JSON.stringify(path.join(dir, "config"))}`, options)).code).not.toBe(0)
+    expect((await verifyCommand("printf safe > source.txt", options)).code).toBe(0)
+  }
 })
 test("new sensitive paths are denied by pattern, including uppercase directories and root ** extras", async () => {
   if (process.platform !== "darwin" || !Bun.which("sandbox-exec")) return

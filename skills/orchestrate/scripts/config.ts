@@ -30,7 +30,7 @@ export interface Position { chain: RoleModel[], timeoutMin: number }
 export interface Routing {
   explore: Position
   plan: Position
-  exec: { effort: string, defaultPool: PoolName, pools: Record<PoolName, RoleModel[]>, timeoutMin: number }
+  exec: { effort: string, pools: Record<PoolName, RoleModel[]>, timeoutMin: number }
   review: Position & { maxRounds: number }
 }
 export interface SafetyConfig {
@@ -190,8 +190,8 @@ function parseDocument(source: string): { routing: Routing, safety: SafetyConfig
   const pools = bag(exec.pools, "positions.exec.pools")
   keys(pools, POOLS, "positions.exec.pools")
   const execEffort = effort(exec.effort ?? "high", "positions.exec.effort")
-  const defaultPool = exec.default_pool as PoolName
-  if (!POOLS.includes(defaultPool)) throw new Error("positions.exec.default_pool 必须是 mechanical、standard 或 hard")
+  // Legacy files remain readable, but only the validated plan chooses a pool.
+  if (exec.default_pool !== undefined && !POOLS.includes(exec.default_pool as PoolName)) throw new Error("positions.exec.default_pool 必须是 mechanical、standard 或 hard")
   const review = position("review", 15)
   const maxRounds = positive(bag(positions.review, "review").max_rounds, 2, "review.max_rounds", true)
   if (!Number.isInteger(maxRounds)) throw new Error("review.max_rounds 必须是整数")
@@ -210,7 +210,7 @@ function parseDocument(source: string): { routing: Routing, safety: SafetyConfig
   return {
     routing: {
       explore: position("explore", 5), plan: position("plan", 10), review: { ...review, maxRounds },
-      exec: { effort: execEffort, defaultPool, timeoutMin: positive(exec.timeout_min, 30, "exec.timeout_min"), pools: Object.fromEntries(POOLS.map((name) => [name, chain(pools[name], `exec.pools.${name}`, execEffort)])) as Routing["exec"]["pools"] },
+      exec: { effort: execEffort, timeoutMin: positive(exec.timeout_min, 30, "exec.timeout_min"), pools: Object.fromEntries(POOLS.map((name) => [name, chain(pools[name], `exec.pools.${name}`, execEffort)])) as Routing["exec"]["pools"] },
     },
     safety: {
       sensitiveExtra: strings(safety.sensitive_extra ?? [], "safety.sensitive_extra"), unsafeRead: providerList("unsafe_read"), unsafeExec: providerList("unsafe_exec"),
@@ -236,6 +236,9 @@ export function validateExecPin(alias: string | undefined, config: Pick<LoadedCo
   if (alias && !config.models.some((row) => row.alias === alias)) throw new Error(`--exec 未知能力：${alias}`)
   if (alias && !config.models.some((row) => row.alias === alias && row.provider !== "pi")) throw new Error(`--exec ${alias} 只有 pi 路由，不能执行`)
 }
+export function validateActor(alias: string | undefined, flag: string, config: Pick<LoadedConfig, "models" | "catalog">): void {
+  if (alias !== undefined && familyOf(alias, config.models, config.catalog) === "unknown") throw new Error(`${flag} 未知能力：${alias}；请使用 models.conf 或 catalog.toml 中有明确家族的能力名`)
+}
 export function loadConfig(location: ConfigLocation | string = resolveConfigDir()): LoadedConfig {
   const resolved = typeof location === "string" ? { dir: location, usingSample: false, modelsFile: "models.conf", routingFile: "routing.toml" } : location
   const catalog = loadCatalog()
@@ -248,9 +251,9 @@ export function loadConfig(location: ConfigLocation | string = resolveConfigDir(
   return config
 }
 /** Unknown authors conflict with every family; never infer a family from an alias. */
-export function familyOf(alias: string, models: ModelRow[] = []): string {
+export function familyOf(alias: string, models: ModelRow[] = [], catalog: Catalog = {}): string {
   const families = new Set(models.filter((row) => row.alias === alias).map((row) => row.family))
-  return families.size === 1 ? [...families][0] : "unknown"
+  return families.size === 1 ? [...families][0] : families.size === 0 ? catalog[alias]?.family ?? "unknown" : "unknown"
 }
 export function serializeModels(rows: ModelRow[]): string {
   return "# <capability> <provider> <local-id> [family=...] [efforts=...] [price=input,output,cache-read,cache-write]\n" + rows.map((row) => {

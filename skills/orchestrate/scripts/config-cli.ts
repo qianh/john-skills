@@ -85,7 +85,7 @@ export function serializeRouting(routing: Routing, safety: SafetyConfig): string
     out.push(`\n[positions.${name}]`, `chain = ${chain(routing[name].chain)}`, `timeout_min = ${routing[name].timeoutMin}`)
     if (name === "review") out.push(`max_rounds = ${routing.review.maxRounds}`)
   }
-  out.push("\n[positions.exec]", `effort = ${quote(routing.exec.effort)}`, `default_pool = ${quote(routing.exec.defaultPool)}`, `timeout_min = ${routing.exec.timeoutMin}`, "\n[positions.exec.pools]")
+  out.push("\n[positions.exec]", `effort = ${quote(routing.exec.effort)}`, `timeout_min = ${routing.exec.timeoutMin}`, "\n[positions.exec.pools]")
   for (const [name, pool] of Object.entries(routing.exec.pools)) out.push(`${name} = ${chain(pool)}`)
   out.push("\n[safety]", `sensitive_extra = ${list(safety.sensitiveExtra)}`, `unsafe_read = ${list(safety.unsafeRead)}`, `unsafe_exec = ${list(safety.unsafeExec)}`, `verify_env = ${list(safety.verifyEnv)}`, `extra_writable = ${list(safety.extraWritable)}`, `verify_timeout_min = ${safety.verifyTimeoutMin}`, "\n[safety.cli_env]")
   for (const [provider, names] of Object.entries(safety.cliEnv)) out.push(`${provider} = ${list(names)}`)

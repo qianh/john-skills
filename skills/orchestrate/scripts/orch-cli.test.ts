@@ -111,16 +111,24 @@ test("real CLI + fake workers + real git snapshots + sandbox evidence complete l
 test("plan-only continues by explicit author and does not execute while waiting", async () => {
   const f = fixture(); const first = await f.run(["run", "--plan-only", "change"]); expect(first.code).toBe(3)
   expect(readFileSync(path.join(f.cwd, "src/x.ts"), "utf8")).toBe("before\n")
+  const file = path.join(f.runDir(), "state.json"), saved = readFileSync(file, "utf8")
   const missing = await f.run(["continue", "--run", f.runDir()]); expect(missing.code).toBe(2)
-  const continued = await f.run(["continue", "--run", f.runDir(), "--by", "sonnet-5.5"])
+  const invalid = await f.run(["continue", "--run", f.runDir(), "--by", "sonnet-5.5", "--budget", "1"])
+  expect(invalid.code).toBe(2); expect(readFileSync(file, "utf8")).toBe(saved)
+  const typo = await f.run(["continue", "--run", f.runDir(), "--by", "typo"])
+  expect(typo.code).toBe(2); expect(typo.stderr).toContain("--by 未知能力"); expect(readFileSync(file, "utf8")).toBe(saved)
+  const continued = await f.run(["continue", "--run", f.runDir(), "--by", "sonnet-5.5", "--budget", "1", "--max-calls", "12"])
   expect(continued.code).toBe(process.platform === "darwin" ? 0 : 5)
 }, 30_000)
 test("non-git editing is refused, read-only review records stay outside project", async () => {
   const f = fixture(false)
   expect((await f.run(["run", "change"])).code).toBe(2)
+  writeFileSync(path.join(f.cwd, "image.bin"), Buffer.from([0, 1, 2]))
+  writeFileSync(path.join(f.cwd, "large.txt"), "x".repeat(1_000_001))
   const output = await f.run(["review", "inspect"])
   expect(output.code).toBe(0); expect(existsSync(path.join(f.cwd, "orchestrate"))).toBe(false)
   expect(f.runDir()).toContain(path.join(f.root, "state"))
+  expect(output.stdout).toContain("仅已展开文本"); expect(output.stdout).toContain("image.bin"); expect(output.stdout).toContain("large.txt")
 }, 20_000)
 test("SIGKILL leaves a tracked worker; continue refuses, stop clears it, recovery does not replay blindly", async () => {
   const f = fixture()
@@ -134,6 +142,8 @@ test("SIGKILL leaves a tracked worker; continue refuses, stop clears it, recover
       try { runDir = f.runDir(); const state = JSON.parse(readFileSync(path.join(runDir, "state.json"), "utf8")); if (state.step === "exec" && state.workers.length) { found = true; break } } catch {}
     }
     expect(found).toBe(true)
+    const executing = JSON.parse(readFileSync(path.join(runDir, "state.json"), "utf8"))
+    expect(executing.authors.some((a: { alias: string }) => a.alias === "sonnet-5.5")).toBe(true)
     process.kill(proc.pid, "SIGKILL"); await proc.exited
     const blocked = await f.run(["continue", "--run", runDir, "--by", "sonnet-5.5"])
     expect(blocked.code).toBe(2); expect(blocked.stderr).toContain("worker")

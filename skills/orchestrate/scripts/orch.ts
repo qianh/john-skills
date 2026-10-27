@@ -2,7 +2,7 @@ import { spawnSync } from "node:child_process"
 import { existsSync, mkdirSync, readFileSync, readdirSync } from "node:fs"
 import { homedir } from "node:os"
 import path from "node:path"
-import { loadConfig, resolveConfigDir, validateExecPin } from "./config.ts"
+import { loadConfig, resolveConfigDir, validateActor, validateExecPin } from "./config.ts"
 import { strictJSON } from "./contracts.ts"
 import { DirectoryWorkspace } from "./directory-workspace.ts"
 import { continueFlow, runFlow, type FlowOptions, type SavedState } from "./flow.ts"
@@ -60,7 +60,7 @@ function stateAt(runDir: string): SavedState {
 }
 function status(runDir: string): void {
   const state = stateAt(runDir)
-  console.log(scanText(`状态：${state.status}\n阶段：${state.step}；修复 ${state.fixes} 轮；已用 ${((Date.now() - state.startedAt) / 60_000).toFixed(1)} 分钟\n调用：${state.calls.length} 次；worker ${state.workers.length} 个\n进度：${state.lastLog}\n记录：${runDir}`).text)
+  console.log(scanText(`状态：${state.status}\n阶段：${state.step}；修复 ${state.fixes} 轮；累计运行 ${((state.activeMs ?? state.calls.reduce((sum, call) => sum + call.ms, 0)) / 60_000).toFixed(1)} 分钟（不含人工等待）\n调用：${state.calls.length} 次；worker ${state.workers.length} 个\n进度：${state.lastLog}\n记录：${runDir}`).text)
 }
 async function withLocks<T>(runDir: string, worktree: string | null, action: () => Promise<T>, stopping = false): Promise<T> {
   const releaseRun = acquireLock(path.join(runDir, "lock"), runDir, stopping)
@@ -135,6 +135,8 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
   if (args.command === "continue" && mode !== "dynamic") throw new Error("continue 动态运行必须显式使用 --mode dynamic")
   const config = loadConfig(resolveConfigDir(args.flags.has("sample")))
   validateExecPin(value(args, "exec"), config)
+  validateActor(value(args, "by"), "--by", config)
+  validateActor(value(args, "author"), "--author", config)
   const allow = parseAllow(args.values.allow)
   const budget = number(args, "budget"), maxCalls = number(args, "max-calls", true), maxMinutes = number(args, "max-minutes")
   const saved = args.command === "continue" ? stateAt(path.resolve(runArg!)) : undefined

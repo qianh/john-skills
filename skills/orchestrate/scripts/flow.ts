@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from "node:crypto"
 import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, rmSync } from "node:fs"
 import path from "node:path"
-import { familyOf, validateExecPin, type LoadedConfig, type ModelRow, type RoleModel } from "./config.ts"
+import { familyOf, validateActor, validateExecPin, type LoadedConfig, type ModelRow, type RoleModel } from "./config.ts"
 import { parseContractText, strictJSON, validatePlan, validateReview, validateChecks, reviewFindings, renderPlan, planSchema, reviewSchema, checksSchema, type Plan, type Review } from "./contracts.ts"
 import { cliProvider } from "./cli-provider.ts"
 import { parseEffortRejection, pickEffort } from "./providers/effort.ts"
@@ -11,7 +11,7 @@ import { correctionPrompt, execPrompt, explorePrompt, planPrompt, reviewPrompt }
 import { atomicJSON, atomicWrite, assertWorkersStopped, stopWorkers, UnavailableCache, type Worker } from "./runtime.ts"
 import { credentialReadPaths, safeEnv, scanText, sanitizeValue } from "./safety.ts"
 import { SnapshotManager, type Snapshot } from "./snapshot.ts"
-import { dependencyPath, missingPermissions, parseAllow, routeAdmission, verifyCommand, type VerificationOutput } from "./sandbox.ts"
+import { dependencyPath, gitWriteDenyPaths, missingPermissions, parseAllow, routeAdmission, verifyCommand, type VerificationOutput } from "./sandbox.ts"
 
 export type Step = "explore" | "plan" | "gate" | "exec" | "verify" | "review" | "fix" | "check" | "finalize"
 export type HandoffType = "plan" | "exec" | "fix" | "verify" | "review" | "check" | "permission" | "budget"
@@ -24,6 +24,7 @@ export interface CallLog {
 export interface SavedState {
   version: 2; goal: string; cwd: string; runDir: string; status: "running" | "waiting" | "done" | "interrupted"
   step: Step; startedAt: number; updatedAt: number; lastLog: string; fixes: number; reviewRound: number; tmpDir: string
+  activeMs?: number
   authors: { alias: string; family: string }[]; sessions: Partial<Record<Role, Session>>; selected: Partial<Record<Role, string>>; workers: Worker[]
   baseline: Snapshot; current: Snapshot; verifiedTree?: string; reviewedTree?: string; checksTree?: string
   plan?: Plan; review?: Review; reviewerFamily?: string; p1: string[]; replacements: string[]; safetyFlags: string[]; redactions?: string[]
@@ -43,6 +44,7 @@ export interface FlowOptions {
   mode?: "run" | "review"; dual?: boolean; author?: string; base?: string; paths?: string[]; by?: string
   workspace?: Workspace; runCommand?: (command: string, cwd: string) => Promise<VerificationOutput>
   newId?: () => string; log?: (line: string) => void; sleep?: (ms: number) => Promise<void>; cache?: UnavailableCache
+  now?: () => number
   resume?: SavedState
 }
 export interface FlowOutcome { ok: boolean; exitCode: number; summary: string; runDir: string }
@@ -69,9 +71,24 @@ class Halt extends Error {
 const schemas = { plan: planSchema, review: reviewSchema, checks: checksSchema }
 
 export async function runFlow(o: FlowOptions): Promise<FlowOutcome> {
-  validateExecPin(o.execPin, o.config)
-  for (const [key, value] of [["budget", o.budget], ["maxCalls", o.maxCalls], ["maxMinutes", o.maxMinutes]] as const) {
+  const limits = { budget: o.budget ?? o.resume?.budget, maxCalls: o.maxCalls ?? o.resume?.maxCalls, maxMinutes: o.maxMinutes ?? o.resume?.maxMinutes }
+  const execPin = o.execPin ?? o.resume?.execPin
+  validateExecPin(execPin, o.config)
+  if (o.resume && !o.by) throw new Error("continue 必须提供 --by <主会话能力名>")
+  validateActor(o.by, "--by", o.config)
+  validateActor(o.author, "--author", o.config)
+  const allow = [...new Set([...(o.resume?.allow ?? []), ...parseAllow(o.allow)])]
+  for (const [key, value] of Object.entries(limits)) {
     if (value !== undefined && (!Number.isFinite(value) || value <= 0 || (key === "maxCalls" && !Number.isInteger(value)))) throw new Error(`--${key} 必须为正${key === "maxCalls" ? "整数" : "数"}`)
+  }
+  if (limits.budget !== undefined && limits.maxCalls === undefined && limits.maxMinutes === undefined) {
+    const configured = new Set([
+      ...o.config.routing.explore.chain, ...o.config.routing.plan.chain, ...o.config.routing.review.chain,
+      ...Object.values(o.config.routing.exec.pools).flat(),
+    ].map((item) => item.model))
+    if (execPin) configured.add(execPin)
+    const unpriced = o.config.models.filter((row) => configured.has(row.alias) && (row.price.input == null || row.price.output == null))
+    if (unpriced.length) throw new Error(`--budget 不覆盖未知金额，须同时给 --max-calls 或 --max-minutes：${unpriced.map((r) => `${r.alias}/${r.provider}`).join(", ")}`)
   }
   mkdirSync(o.runDir, { recursive: true, mode: 0o700 })
   const workspace = o.workspace ?? new SnapshotManager(o.cwd, o.runDir, { sensitiveExtra: o.config.safety.sensitiveExtra })
@@ -86,10 +103,17 @@ export async function runFlow(o: FlowOptions): Promise<FlowOutcome> {
     return { version: 2, goal: o.goal, cwd: workspace.cwd, runDir: o.runDir, status: "running", step: o.mode === "review" ? "review" : "explore", startedAt: Date.now(), updatedAt: Date.now(), lastLog: "预检完成", fixes: 0, reviewRound: 1, tmpDir: commandTmp, authors: [], sessions: {}, selected: {}, workers: [], baseline, current: baseline, p1: [], replacements: [], safetyFlags: [], redactions: [], calls: [], cumulativeCosts: {}, allow: parseAllow(o.allow), execPin: o.execPin, planOnly: o.planOnly ?? false, budget: o.budget, maxCalls: o.maxCalls, maxMinutes: o.maxMinutes, mode: o.mode ?? "run", dual: o.dual ?? false, author: o.author, base: o.base, paths: o.paths ?? [], reviewFamilies: [], reviewP1: [] }
   })()
   if (state.version !== 2) throw new Error("旧运行状态不兼容；请保留记录并新开运行")
+  state.allow = allow; state.execPin = execPin
+  Object.assign(state, limits)
+  const now = o.now ?? Date.now, activeStart = now()
+  // Old states have no active clock; ledger durations exclude past handoff waits.
+  const priorActiveMs = state.activeMs ?? state.calls.reduce((sum, call) => sum + call.ms, 0)
+  const activeMs = () => priorActiveMs + Math.max(0, now() - activeStart)
   const scan = (text: string): string => { const found = scanText(text); state.redactions = [...new Set([...(state.redactions ?? []), ...found.flags])]; return found.text }
   const write = (name: string, text: string) => atomicWrite(path.join(o.runDir, name), scan(text))
   const persist = () => {
     state.updatedAt = Date.now()
+    state.activeMs = activeMs()
     const clean = sanitizeValue(state)
     state.redactions = [...new Set([...(state.redactions ?? []), ...clean.flags])]
     atomicJSON(path.join(o.runDir, "state.json"), { ...clean.value as SavedState, safetyFlags: state.safetyFlags })
@@ -97,10 +121,11 @@ export async function runFlow(o: FlowOptions): Promise<FlowOutcome> {
   }
   const log = (text: string) => { state.lastLog = brief(text); o.log?.(state.lastLog); persist() }
   const author = (alias: string) => {
-    if (!state.authors.some((a) => a.alias === alias)) state.authors.push({ alias, family: familyOf(alias, o.config.models) })
+    if (!state.authors.some((a) => a.alias === alias)) state.authors.push({ alias, family: familyOf(alias, o.config.models, o.config.catalog) })
   }
   const capture = () => {
     state.current = workspace.captureSnapshot()
+    state.redactions = [...new Set([...(state.redactions ?? []), ...(state.current.redactions ?? [])])]
     state.safetyFlags = [...new Set([...state.safetyFlags, ...workspace.checkSafety(state.baseline, state.current)])]
     persist()
     return state.current
@@ -120,13 +145,13 @@ export async function runFlow(o: FlowOptions): Promise<FlowOutcome> {
     void stopWorkers(state.workers).finally(() => { persist(); process.exit(4) })
   }
   process.once("SIGINT", onSignal); process.once("SIGTERM", onSignal)
-  const securityProfile = () => createHash("sha256").update(JSON.stringify({ safety: o.config.safety, allow: state.allow, cwd: state.cwd, adapter: 2 })).digest("hex")
+  const securityProfile = () => createHash("sha256").update(JSON.stringify({ safety: o.config.safety, allow: state.allow, cwd: state.cwd, adapter: 3 })).digest("hex")
   const budgetCheck = () => {
     if (interrupting) halt(4, "收到中断信号，停止派发新 worker")
     const known = state.calls.reduce((sum, c) => sum + (c.usage.costUsd ?? 0), 0)
     if (state.budget !== undefined && known >= state.budget) handoff("budget", `已知金额 $${known.toFixed(4)} 达到预算 $${state.budget}`)
     if (state.maxCalls !== undefined && state.calls.length >= state.maxCalls) handoff("budget", `已调用 ${state.calls.length} 次，达到 max-calls`)
-    if (state.maxMinutes !== undefined && Date.now() - state.startedAt >= state.maxMinutes * 60_000) handoff("budget", "达到 max-minutes")
+    if (state.maxMinutes !== undefined && activeMs() >= state.maxMinutes * 60_000) handoff("budget", "达到 max-minutes（不含人工等待）")
   }
   const diff = () => {
     capture()
@@ -173,13 +198,16 @@ export async function runFlow(o: FlowOptions): Promise<FlowOutcome> {
         for (let attempt = 0; attempt < 2; attempt++) {
           budgetCheck()
           const fullPrompt = role === "exec" ? execPrompt(state.goal, planText(), state.allow, state.baseline.preexisting, diff(), prompt) : prompt
-          const sandbox = row.provider === "grok" ? { profile: role === "exec" ? "workspace" : "read-only" } : row.provider === "claude" ? { settings: { sandbox: { enabled: true, allowUnsandboxedCommands: false, autoAllowBashIfSandboxed: true, filesystem: { allowWrite: role === "exec" ? [state.cwd, commandTmp] : [commandTmp], denyWrite: [workspace.gitDir, path.join(state.cwd, ".git")], denyRead: [...Object.keys(state.current.sensitive).map((f) => path.join(state.cwd, f)), ...credentialReadPaths("claude", o.config.safety.sensitiveExtra)] }, network: { allowedDomains: state.allow.includes("network:*") ? ["*"] : state.allow.filter((a) => a.startsWith("network:")).map((a) => a.slice(8)) } } } } : undefined
+          const sandbox = row.provider === "grok" ? { profile: role === "exec" ? "workspace" : "read-only" } : row.provider === "claude" ? { settings: { sandbox: { enabled: true, allowUnsandboxedCommands: false, autoAllowBashIfSandboxed: true, filesystem: { allowWrite: role === "exec" ? [state.cwd, commandTmp] : [commandTmp], denyWrite: gitWriteDenyPaths(state.cwd, workspace.gitDir), denyRead: [...Object.keys(state.current.sensitive).map((f) => path.join(state.cwd, f)), ...credentialReadPaths("claude", o.config.safety.sensitiveExtra)] }, network: { allowedDomains: state.allow.includes("network:*") ? ["*"] : state.allow.filter((a) => a.startsWith("network:")).map((a) => a.slice(8)) } } } } : undefined
           const req: StageRequest = { provider: row.provider, role, model: row.modelId, effort, prompt: scan(fullPrompt), cwd: state.cwd, sessionId, resume, sessionDir: path.join(commandTmp, "pi-sessions"), schema, schemaPath: schema ? path.join(o.runDir, role === "plan" ? "plan.schema.json" : "review.schema.json") : undefined, timeoutMs: o.config.routing[role].timeoutMin * 60_000, securityProfile: profile, env: safeEnv(row.provider, o.config.safety.cliEnv[row.provider] ?? [], commandTmp), supportedEfforts: row.efforts ?? undefined, sandbox }
           log(`→ ${role} ${row.alias}/${row.provider} · ${effort}${resume ? "（续接）" : ""}`)
+          const wasAuthor = state.authors.some((a) => a.alias === row.alias)
+          // Persist before launch so SIGKILL cannot lose a possible partial author.
+          if (role === "exec") author(row.alias)
           const call: CallLog = { role, alias: row.alias, provider: row.provider, model: row.modelId, requestedEffort: position.effort, effort, sessionId, resume, ms: 0, usage: unknownUsage(), costSource: "unknown", result: "pending" }
           state.calls.push(call); persist()
           const started = Date.now()
-          const beforeReadOnly = state.current.tree
+          const beforeAttempt = state.current.tree
           let result: ProviderResult | undefined, error: Error | undefined
           try { result = await provider.run(req); if (result.error) throw new ProviderOutputError(result.error, result) }
           catch (caught) { error = caught instanceof Error ? caught : new Error(String(caught)); if (caught instanceof ProviderOutputError) result = caught.result }
@@ -204,14 +232,17 @@ export async function runFlow(o: FlowOptions): Promise<FlowOutcome> {
               if (cost != null) { call.usage.costUsd = cost; call.costSource = "price" }
             }
           }
+          const afterAttempt = capture().tree
+          if (role === "exec" && !wasAuthor && error && afterAttempt === beforeAttempt && !interrupting) {
+            state.authors = state.authors.filter((a) => a.alias !== row.alias)
+          }
           attempted++; persist()
           if (interrupting) halt(4, "中断后停止后续重试/替换")
-          if (role !== "exec" && capture().tree !== beforeReadOnly) {
+          if (role !== "exec" && afterAttempt !== beforeAttempt) {
             author(row.alias); state.safetyFlags.push(`${role} 只读调用期间工作区发生写入`)
             halt(5, "只读阶段检测到工作区变化，停止推进并保留证据")
           }
           if (!error && result) {
-            if (role === "exec") author(row.alias)
             const kept: Session = { alias: row.alias, provider: row.provider, modelId: row.modelId, sessionId: result.sessionId ?? sessionId, securityProfile: profile }
             // An invented ID is not evidence that the CLI established a resumable session.
             if (result.sessionId) state.sessions[role] = kept
@@ -246,8 +277,7 @@ export async function runFlow(o: FlowOptions): Promise<FlowOutcome> {
         const message = brief(String(error), 1000)
         write(`${role}-invalid-${state.reviewRound}-${attempt + 1}.txt`, called.result.text)
         if (attempt === 1) {
-          if (role === "plan") handoff("plan", `方案两次格式无效：${message}`)
-          halt(1, `审查两次格式无效：${message}`)
+          handoff(role, `${role === "plan" ? "方案" : "审查"}两次格式无效：${message}`)
         }
         called = await invoke(role, o.config.routing[role].chain, `${prompt}\n${correctionPrompt(message)}`, schema, called.session)
       }
@@ -259,33 +289,17 @@ export async function runFlow(o: FlowOptions): Promise<FlowOutcome> {
     state.fixes++; state.p1 = reason; state.verifiedTree = undefined; state.reviewedTree = undefined; state.checksTree = undefined; state.reviewFamilies = []; state.reviewP1 = []
     step("fix")
   }
-  function validateBudgetConfig(): void {
-    if (state.budget === undefined || state.maxCalls !== undefined || state.maxMinutes !== undefined) return
-    const configured = new Set<string>([
-      ...o.config.routing.explore.chain.map((item) => item.model),
-      ...o.config.routing.plan.chain.map((item) => item.model),
-      ...o.config.routing.review.chain.map((item) => item.model),
-      ...Object.values(o.config.routing.exec.pools).flat().map((item) => item.model),
-    ])
-    if (state.execPin) configured.add(state.execPin)
-    const unpriced = o.config.models.filter((row) => configured.has(row.alias) && (row.price.input == null || row.price.output == null))
-    if (unpriced.length) halt(2, `--budget 不覆盖未知金额，须同时给 --max-calls 或 --max-minutes：${unpriced.map((r) => `${r.alias}/${r.provider}`).join(", ")}`)
-  }
 
   let exitCode = 4, reason = "", handoffType: HandoffType | undefined
   try {
     assertWorkersStopped(state.workers); state.workers = []
     for (const [name, schema] of Object.entries(schemas)) write(`${name}.schema.json`, JSON.stringify(schema, null, 2))
     if (o.resume) {
-      if (!o.by) throw new Error("continue 必须提供 --by <主会话能力名>")
-      state.allow = [...new Set([...state.allow, ...parseAllow(o.allow)])]
-      state.execPin = o.execPin ?? state.execPin
-      state.budget = o.budget ?? state.budget; state.maxCalls = o.maxCalls ?? state.maxCalls; state.maxMinutes = o.maxMinutes ?? state.maxMinutes
       const pending = state.handoff
       const was = state.current.tree
       capture()
       const changed = was !== state.current.tree
-      if (changed || pending?.type === "exec" || pending?.type === "fix") author(o.by)
+      if (changed || pending?.type === "exec" || pending?.type === "fix") author(o.by!)
       if (pending && changed && state.plan && !["exec", "fix", "plan", "permission"].includes(pending.type)) {
         state.verifiedTree = undefined; state.reviewedTree = undefined; state.checksTree = undefined; state.reviewFamilies = []
         step("verify")
@@ -293,16 +307,16 @@ export async function runFlow(o: FlowOptions): Promise<FlowOutcome> {
         try { state.plan = validatePlan(strictJSON(scan(artifact(path.join(o.runDir, "plan.json"))))); write("plan.md", planText()); step("gate") }
         catch (error) { handoff("plan", `交接方案无效：${brief(String(error))}`) }
       } else if (pending?.type === "exec" || pending?.type === "fix" || pending?.type === "verify") { step("verify") }
-      else if (pending?.type === "permission") { state.planOnly = false; step("gate") }
+      else if (pending?.type === "permission") { state.planOnly = false; step(state.step === "gate" ? "gate" : "verify") }
       else if (pending?.type === "review") {
         try {
           state.review = validateReview(strictJSON(scan(artifact(path.join(o.runDir, `review-${state.reviewRound}.json`)))), state.plan!, state.current.tree, outOfScope())
-          state.reviewerFamily = familyOf(o.by, o.config.models); state.reviewedTree = state.current.tree
+          state.reviewerFamily = familyOf(o.by!, o.config.models, o.config.catalog); state.reviewedTree = state.current.tree
           state.p1 = reviewFindings(state.review).map((f) => `${f.ref}: ${f.issue}`)
+          state.reviewRound++
           if (state.mode === "review") {
             state.reviewP1.push(...state.p1)
             state.reviewFamilies.push(state.reviewerFamily)
-            state.reviewRound++
             if (state.dual && state.reviewFamilies.length < 2) step("review")
             else { state.p1 = [...state.reviewP1]; step("finalize") }
           } else if (state.p1.length) scheduleFix(state.p1)
@@ -324,8 +338,6 @@ export async function runFlow(o: FlowOptions): Promise<FlowOutcome> {
         state.verifiedTree = undefined; state.reviewedTree = undefined; state.checksTree = undefined
       }
     }
-    // Permissions are part of session compatibility; recomputed after continue merges allow.
-    validateBudgetConfig()
     if (state.mode === "review" && !state.plan) {
       if (state.author) author(state.author)
       state.plan = { exec_type: "standard", criteria: [], allowed_paths: state.paths.length ? state.paths : ["**"], needs_permission: [], steps: ["只读审查"], context: [] }
@@ -352,6 +364,7 @@ export async function runFlow(o: FlowOptions): Promise<FlowOutcome> {
         }
         case "gate": {
           const missing = missingPermissions(state.plan!, state.allow)
+          if (!state.allow.includes("deps") && state.plan!.allowed_paths.some((p) => !/[?*[{]/.test(p) && dependencyPath(p))) missing.push("deps")
           if (missing.length) handoff("permission", `需要用户明确授权：${missing.join(", ")}；方案不能代替授权`)
           if (state.planOnly) handoff("permission", "plan-only：方案已完成，尚未执行；明确继续后再 continue")
           step("exec"); break
@@ -363,11 +376,13 @@ export async function runFlow(o: FlowOptions): Promise<FlowOutcome> {
         }
         case "verify": {
           capture(); const tree = state.current.tree
+          const changedDeps = scopePaths().filter(dependencyPath)
+          if (state.mode === "run" && changedDeps.length && !state.allow.includes("deps")) handoff("permission", `依赖清单/锁文件变动需要用户明确授权 deps：${changedDeps.join(", ")}；授权后继续验收，不重做执行`)
           const evidence: { id: string; command: string; tree: string; output: VerificationOutput }[] = []
           let blocked = false
           for (const criterion of state.plan!.criteria.filter((c) => c.kind === "command")) {
             for (const command of criterion.commands!) {
-              const remaining = state.maxMinutes === undefined ? Infinity : state.startedAt + state.maxMinutes * 60_000 - Date.now()
+              const remaining = state.maxMinutes === undefined ? Infinity : state.maxMinutes * 60_000 - activeMs()
               if (remaining <= 0) handoff("budget", "验收前达到 max-minutes")
               const output = o.runCommand ? await o.runCommand(command, state.cwd) : await verifyCommand(command, { cwd: state.cwd, gitDir: workspace.gitDir, tmpDir: commandTmp, allow: state.allow, sensitiveExtra: o.config.safety.sensitiveExtra, sensitivePaths: Object.keys(state.current.sensitive), extraWritable: o.config.safety.extraWritable, verifyEnv: o.config.safety.verifyEnv, timeoutMs: Math.min(o.config.safety.verifyTimeoutMin * 60_000, remaining) }, hooks)
               if (interrupting) halt(4, "验收中断，停止后续命令")
@@ -422,7 +437,7 @@ export async function runFlow(o: FlowOptions): Promise<FlowOutcome> {
             if (state.p1.length) halt(1, "存在未关闭 P1")
           }
           const changedDeps = scopePaths().filter(dependencyPath)
-          if (changedDeps.length && !state.allow.includes("deps") && state.mode === "run") state.safetyFlags.push(`依赖清单/锁文件变动未授权：${changedDeps.join(", ")}`)
+          if (changedDeps.length && !state.allow.includes("deps") && state.mode === "run") handoff("permission", `依赖清单/锁文件变动需要用户明确授权 deps：${changedDeps.join(", ")}`)
           if (state.safetyFlags.length) halt(5, "存在未处理安全标记")
           halt(0, state.mode === "review" ? "只读审查完成（不是代码交付声明）" : "所有完成标准与最终快照证据一致")
         }
@@ -454,13 +469,14 @@ export async function runFlow(o: FlowOptions): Promise<FlowOutcome> {
   const target = handoffType === "review" ? `review-${state.reviewRound}.json` : handoffType === "plan" ? "plan.json" : handoffType === "check" ? "checks.json" : "plan.md / verify.txt / 最新 review-N.json"
   const next = handoffType ? `只做 ${handoffType}：${reason}；文件 ${path.join(o.runDir, target)}${schema ? `；schema ${path.join(o.runDir, `${schema}.schema.json`)}` : ""}；之后 bun ${JSON.stringify(path.join(import.meta.dir, "orch.ts"))} continue --mode dynamic --run ${JSON.stringify(o.runDir)} --by <主会话能力名>${handoffType === "permission" ? " [--allow 用户批准的类别]" : handoffType === "budget" ? " [新的 --budget/--max-calls/--max-minutes]" : ""}` : exitCode === 4 ? `确认旧 worker 停止后 continue --mode dynamic --run ${JSON.stringify(o.runDir)} --by <主会话能力名>` : reason
   const summary = scan([
-    `结论：${names[exitCode]}${state.mode === "review" ? "（只读审查）" : ""}`,
+    `结论：${names[exitCode]}${state.mode === "review" ? `（只读审查${state.current.evidenceGaps?.length ? "，仅已展开文本" : ""}）` : ""}`,
     `阵容：${["plan", "exec", "review"].map((r) => `${r} ${state.selected[r as Role] ?? "主会话/无"}`).join(" · ")}（替换/跳过 ${state.replacements.length} 项，见 routing-log.json）`,
     `改动：${files.length} 个文件 ${files.slice(0, 12).join(", ")}${files.length > 12 ? "…" : ""}；与已有修改重叠 ${files.filter((f) => state.baseline.preexisting.includes(f)).length} 个`,
     `完成标准：命令 ${state.verifiedTree ? "已复核" : "未复核"}；人工核验 ${state.checksTree ? "有证据" : "无/未做"}；最终快照 ${state.current.tree.slice(0, 12)}`,
     `审查：修复 ${state.fixes} 轮；P1 未关闭 ${state.p1.length}；P2 ${state.review?.p2.length ?? 0}${mainReview ? "；主控完成（无独立 reviewer）" : ""}${state.mode === "review" && !state.author ? "；未提供 author，没有作者独立性保证" : ""}`,
     `安全：${state.safetyFlags.length ? state.safetyFlags.map((s) => brief(s, 90)).slice(0, 5).join("；") : "无阻断标记"}`,
     `脱敏：${state.redactions?.length ? state.redactions.join("、") : "无"}`,
+    ...(state.current.evidenceGaps?.length ? [`覆盖缺口：${state.current.evidenceGaps.length} 项；${state.current.evidenceGaps.slice(0, 5).map((gap) => brief(gap, 90)).join("；")}；完整范围见 state.json，不宣称已审查未展开文件`] : []),
     `边界：unsafe_read=${o.config.safety.unsafeRead.join(",") || "无"}；unsafe_exec=${o.config.safety.unsafeExec.join(",") || "无"}${o.config.safety.unsafeRead.length || o.config.safety.unsafeExec.length ? "（显式例外，外壳隔离未验证）" : ""}；${state.allow.includes("network:*") ? "网络获准全出站，发布/推送剩下授权和凭证约束，不保证物理隔离" : state.allow.some((a) => a.startsWith("network:")) ? "仅域名联网授权；验收沙箱及未实测层仍禁网" : "网络未授权"}`,
     `账单：${byRole || "无调用"} · 合计 ${unknown ? "≥ " : ""}$${known.toFixed(4)}（${unknown} 次未报价；CLI 报价/价格估算，非账单）${referenceTotal == null || !referenceAlias ? "" : `；本次 token 按 ${referenceAlias} 单价重算约 $${referenceTotal.toFixed(4)}（估算）`}`,
     `下一步：${next}`,

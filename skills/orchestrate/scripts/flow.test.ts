@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs"
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import path from "node:path"
 import { loadConfig, type LoadedConfig } from "./config.ts"
@@ -65,11 +65,18 @@ describe("snapshot-evidenced flow", () => {
     expect(result.exitCode).toBe(1); expect(h.state().fixes).toBe(2)
     expect(h.calls.filter((r) => r.role === "exec")).toHaveLength(3)
   })
-  test("two invalid reviews block, rather than reporting zero findings", async () => {
+  test("two invalid reviews hand off without losing execution and verification", async () => {
     const h = harness((req) => req.role === "review" ? '{"p2":[]}' : undefined)
-    expect((await h.run()).exitCode).toBe(1)
+    expect((await h.run()).exitCode).toBe(3)
     const reviews = h.calls.filter((r) => r.role === "review")
     expect(reviews).toHaveLength(2); expect(reviews[1].resume).toBe(true)
+    const state = h.state()
+    expect(state.status).toBe("waiting"); expect(state.handoff?.type).toBe("review")
+    expect(state.verifiedTree).toBe(state.current.tree)
+    writeFileSync(path.join(h.runDir, `review-${state.reviewRound}.json`), JSON.stringify({ p1: [], p2: [], criteria: [], out_of_scope: [], reviewed_tree: state.current.tree }))
+    const count = h.calls.length
+    expect((await h.next()).exitCode).toBe(0)
+    expect(h.calls).toHaveLength(count); expect(h.commands).toHaveLength(1)
   })
   test("invalid plan gets one correction, then a schema handoff", async () => {
     const h = harness((req) => req.role === "plan" ? "## 验收\nnpm publish" : undefined)
@@ -194,7 +201,8 @@ describe("snapshot-evidenced flow", () => {
     expect(h.state().safetyFlags.join(" ")).toContain("只读调用")
   })
   test("budget needs another bound for unknown prices; call cap includes failures", async () => {
-    const h = harness(); expect((await h.run({ budget: 1 })).exitCode).toBe(2); expect(h.calls).toHaveLength(0)
+    const h = harness(); await expect(h.run({ budget: 1 })).rejects.toThrow("--max-calls"); expect(h.calls).toHaveLength(0)
+    expect(existsSync(path.join(h.runDir, "state.json"))).toBe(false)
     const bounded = harness(); expect((await bounded.run({ budget: 1, maxCalls: 1 })).exitCode).toBe(3)
     expect(bounded.calls).toHaveLength(1); expect(bounded.state().handoff?.type).toBe("budget")
   })
@@ -232,6 +240,95 @@ describe("snapshot-evidenced flow", () => {
     const h = harness(); await h.run({ planOnly: true })
     await expect(continueFlow(h.base)).rejects.toThrow("--by")
     await expect(h.run({ execPin: "typo" })).rejects.toThrow("未知能力")
+  })
+  test("invalid merged continue options leave the waiting state byte-for-byte intact", async () => {
+    const h = harness(); await h.run({ planOnly: true })
+    const file = path.join(h.runDir, "state.json"), saved = readFileSync(file, "utf8"), calls = h.calls.length
+    for (const extra of [{ budget: 1 }, { by: "typo" }, { execPin: "typo" }, { allow: ["invalid"] }]) {
+      await expect(h.next(extra)).rejects.toThrow()
+      expect(readFileSync(file, "utf8")).toBe(saved)
+      expect(h.calls).toHaveLength(calls)
+    }
+    expect((await h.next({ budget: 1, maxCalls: 12 })).exitCode).toBe(0)
+    expect(h.calls.filter((req) => req.role === "plan")).toHaveLength(1)
+  })
+  test("a failed execution's partial code remains attributed and cannot self-review", async () => {
+    const h = harness((req) => {
+      if (req.role === "exec") {
+        expect(h.state().authors.some((a) => a.alias === (req.model.includes("grok") ? "grok-4.7" : "sonnet-5.5"))).toBe(true)
+        if (req.model.includes("grok")) return new Error("fatal after partial edit")
+      }
+    })
+    h.config.routing.exec.pools.standard = [{ model: "grok-4.7", effort: "high" }, { model: "sonnet-5.5", effort: "high" }]
+    h.config.routing.review.chain = [{ model: "grok-4.7", effort: "high" }, { model: "gpt-6.1-sol", effort: "high" }]
+    expect((await h.run()).ok).toBe(true)
+    expect(h.state().authors.map((a) => a.family).sort()).toEqual(["anthropic", "xai"])
+    expect(h.calls.filter((req) => req.role === "review").every((req) => req.model.includes("gpt"))).toBe(true)
+  })
+  test("a proven notSent attempt with no edits removes only its provisional author", async () => {
+    const h = harness((req) => {
+      if (req.role === "exec" && req.model.includes("grok")) {
+        h.setTree("base")
+        return Object.assign(new Error("not executable"), { notSent: true })
+      }
+    })
+    h.config.routing.exec.pools.standard = [{ model: "grok-4.7", effort: "high" }, { model: "sonnet-5.5", effort: "high" }]
+    h.config.routing.review.chain = [{ model: "grok-4.7", effort: "high" }]
+    expect((await h.run()).ok).toBe(true)
+    expect(h.state().authors.map((a) => a.alias)).toEqual(["sonnet-5.5"])
+  })
+  test("Claude denies both private and common git metadata in a linked worktree", async () => {
+    const h = harness(), common = path.join(h.base.cwd, "common.git"), gitDir = path.join(common, "worktrees/linked")
+    mkdirSync(gitDir, { recursive: true }); writeFileSync(path.join(gitDir, "commondir"), "../..\n")
+    h.base.workspace!.gitDir = gitDir
+    h.config.routing.exec.pools.standard = [{ model: "sonnet-5.5", effort: "high" }]
+    expect((await h.run()).ok).toBe(true)
+    const settings = h.calls.find((req) => req.role === "exec")!.sandbox!.settings as { sandbox: { filesystem: { denyWrite: string[] } } }
+    expect(settings.sandbox.filesystem.denyWrite).toEqual([realpathSync(gitDir), path.join(realpathSync(h.base.cwd), ".git"), realpathSync(common)])
+  })
+  test("controller review artifacts survive a fix and the next worker review", async () => {
+    const h = harness(); h.config.routing.review.chain = [{ model: "grok-4.7", effort: "high" }]
+    expect((await h.run()).exitCode).toBe(3) // grok is the execution author
+    const state = h.state(), file = path.join(h.runDir, `review-${state.reviewRound}.json`), patch = path.join(h.runDir, `diff-${state.reviewRound}.patch`)
+    const review = JSON.stringify({ p1: [{ ref: "src/x.ts:1", issue: "fix this" }], p2: [], criteria: [], out_of_scope: [], reviewed_tree: state.current.tree })
+    writeFileSync(file, review); const before = readFileSync(patch, "utf8")
+    h.config.routing.review.chain.push({ model: "gpt-6.1-sol", effort: "high" })
+    expect((await h.next()).ok).toBe(true)
+    expect(readFileSync(file, "utf8")).toBe(review); expect(readFileSync(patch, "utf8")).toBe(before)
+    expect(existsSync(path.join(h.runDir, `review-${state.reviewRound + 1}.json`))).toBe(true)
+  })
+  test("max-minutes excludes controller waiting time but still bounds active time", async () => {
+    let clock = 0
+    const h = harness((req) => { if (req.role === "exec") clock += 70_000 })
+    h.base.now = () => clock
+    expect((await h.run({ planOnly: true, maxMinutes: 1 })).exitCode).toBe(3)
+    clock += 24 * 60 * 60_000
+    const next = await h.next()
+    expect(next.exitCode).toBe(3); expect(h.calls.some((req) => req.role === "exec")).toBe(true)
+    expect(h.state().handoff?.type).toBe("budget"); expect(h.state().activeMs).toBe(70_000)
+    expect((await h.next({ maxMinutes: 2 })).ok).toBe(true)
+    expect(h.calls.filter((req) => req.role === "exec")).toHaveLength(1)
+  })
+  test("dependency permission can be added before verification without replaying execution", async () => {
+    const h = harness((req) => req.role === "plan" ? { ...plan, allowed_paths: ["**"] } : undefined)
+    h.base.workspace!.changedPaths = (a, b) => a === b ? [] : ["package.json"]
+    expect((await h.run()).exitCode).toBe(3)
+    expect(h.state().handoff?.type).toBe("permission"); expect(h.state().step).toBe("verify")
+    expect(h.commands).toHaveLength(0); expect(h.calls.filter((req) => req.role === "review")).toHaveLength(0)
+    expect((await h.next({ allow: ["deps"] })).ok).toBe(true)
+    expect(h.calls.filter((req) => req.role === "exec")).toHaveLength(1)
+    const explicit = harness((req) => req.role === "plan" ? { ...plan, allowed_paths: ["src/**", "package.json"] } : undefined)
+    expect((await explicit.run()).exitCode).toBe(3)
+    expect(explicit.calls.some((req) => req.role === "exec")).toBe(false)
+  })
+  test("read-only review after an external manifest edit does not require dependency-write permission", async () => {
+    const h = harness(); h.config.safety.unsafeRead = []
+    h.base.workspace!.changedPaths = () => ["package.json"]
+    expect((await h.run({ mode: "review" })).exitCode).toBe(3)
+    h.setTree("external-change"); h.config.safety.unsafeRead = ["claude", "grok", "pi"]
+    expect((await h.next()).ok).toBe(true)
+    expect(h.commands).toHaveLength(0); expect(h.calls.every((req) => req.role === "review")).toBe(true)
+    expect(h.state().allow).not.toContain("deps")
   })
 })
 

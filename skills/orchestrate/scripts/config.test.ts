@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test"
 import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import path from "node:path"
-import { familyOf, loadCatalog, loadConfig, parseCatalog, parseModels, parseRouting, parseSafety, resolveConfigDir, serializeModels, skillRoot, validateConfig, validateExecPin } from "./config.ts"
+import { familyOf, loadCatalog, loadConfig, parseCatalog, parseModels, parseRouting, parseSafety, resolveConfigDir, serializeModels, skillRoot, validateActor, validateConfig, validateExecPin } from "./config.ts"
 import { applyProposal, configMain, parseModelList, proposedModels, writeProposal, type Discovery } from "./config-cli.ts"
 import { detectHosts } from "./preflight.ts"
 
@@ -51,6 +51,13 @@ describe("catalog and model routes", () => {
     config.models.push({ ...config.models[0], provider: "codex", family: "openai" })
     expect(() => validateConfig(config)).toThrow("family 不一致")
   })
+  test("controller identity uses explicit model or catalog families, never a guessed name", () => {
+    const config = loadConfig(resolveConfigDir(true))
+    config.models = config.models.filter((row) => row.alias !== "sonnet-5.5")
+    expect(() => validateActor("sonnet-5.5", "--by", config)).not.toThrow()
+    expect(familyOf("sonnet-5.5", config.models, config.catalog)).toBe("anthropic")
+    expect(() => validateActor("sonnet-typo", "--by", config)).toThrow("--by 未知能力")
+  })
 })
 
 describe("strict routing and configuration location", () => {
@@ -65,7 +72,7 @@ describe("strict routing and configuration location", () => {
   })
   test.each([
     (text: string) => text + '\n[triage]\nsonnet="high"',
-    (text: string) => text.replace('default_pool = "standard"', 'default_pool = "missing"'),
+    (text: string) => text.replace('[positions.exec]', '[positions.exec]\ndefault_pool = "missing"'),
     (text: string) => text.replace('timeout_min = 5', 'timeout_min = -1'),
     (text: string) => text.replace('max_rounds = 2', 'max_rounds = 0.5'),
     (text: string) => text.replace('effort = "medium"', 'effort = "banana"'),
@@ -86,6 +93,10 @@ describe("strict routing and configuration location", () => {
     config.models = config.models.filter((row) => row.provider === "pi" || row.alias !== "gpt-6.1-sol")
     config.routing.exec.pools.hard = [{ model: "gpt-6.1-sol", effort: "high" }]
     expect(() => validateConfig(config)).toThrow("只有 pi")
+  })
+  test("legacy default_pool is accepted without overriding plan-based execution pools", () => {
+    const source = routingSource()
+    expect(parseRouting(source.replace("[positions.exec]", '[positions.exec]\ndefault_pool = "hard"'))).toEqual(parseRouting(source))
   })
   test("all absent samples, partial configuration errors, both present use user, --sample overrides", () => {
     const dir = temp(), old = process.env.ORCHESTRATE_HOME

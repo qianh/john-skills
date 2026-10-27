@@ -53,7 +53,7 @@ rtk proxy ~/.bun/bin/bun "${CLAUDE_SKILL_DIR}/scripts/orch.ts" run --mode dynami
 .../orch.ts review --mode dynamic --base HEAD~1 --dual "<审查目标>"
 ```
 
-只读审查默认看“安全 HEAD → 当前快照”，不执行验收、不自动修复；没给 `--author` 时不能声称审查独立于作者。非 Git 只读记录位于 `${XDG_STATE_HOME:-~/.local/state}/orchestrate/`，大文件/二进制等证据缺口如实标注。
+只读审查默认看“安全 HEAD → 当前快照”，不执行验收、不自动修复；没给 `--author` 时不能声称审查独立于作者。非 Git 只读记录位于 `${XDG_STATE_HOME:-~/.local/state}/orchestrate/`；大文件/二进制按路径列入覆盖缺口，不阻断已展开文本的审查，也不宣称已覆盖未展开文件。
 
 ## 正常流程
 
@@ -62,7 +62,8 @@ rtk proxy ~/.bun/bin/bun "${CLAUDE_SKILL_DIR}/scripts/orch.ts" run --mode dynami
 - 验收只来自 `plan.json` 的 command 标准，不从 Markdown、禁止项或全文猜命令。`rtk bun test`、`npx`、项目脚本都可作为单行命令。
 - 验收失败先修，再审查；与审查 P1 共用默认两轮修复额度。仅成功建立的会话才续接；换人/安全配置变化新开会话，带完整接手上下文。
 - 每次审查优先排除所有代码作者家族；找不到独立候选就交主控接管，不因内部 reviewer 缺失让整体任务卡死。
-- review 格式无效只纠正一次。P1/P2、check 标准、越界路径、快照 id 都必须校验；格式不认识不等于无问题。
+- review 格式无效只纠正一次；仍无效就保留执行、验收进度，交主控补齐有效审查后 continue。P1/P2、check 标准、越界路径、快照 id 都必须校验；格式不认识不等于无问题。
+- 作者包含失败、超时后留下增量的执行者；启动前保守落盘，防止中断丢失归属。Claude 和验收共用 Git 元数据禁写路径，包含 linked worktree 的公共目录。
 - “完成”需要最终验收、审查、当前快照一致，check 标准有人工证据，且无阻断性安全标记。独立 reviewer 是质量增强项，不是主控完成任务的硬前置；模型自报通过不是验收证据。
 
 ## 交接与恢复
@@ -74,6 +75,7 @@ rtk proxy ~/.bun/bin/bun "${CLAUDE_SKILL_DIR}/scripts/orch.ts" run --mode dynami
 | plan | 按 schema 写 `plan.json`，不是只写 Markdown |
 | exec / fix | 按方案/失败证据/P1 改代码，不 commit |
 | review | 只读审查，写指定的 `review-N.json` |
+| verify | 修复验收环境或取得所需授权后重跑验收，不重做执行 |
 | check | 核验全部 check 标准，写 `checks.json`，包含 `checked_tree` 和逐条 evidence |
 | permission | 向用户说明所需权限，明确同意后带对应 `--allow` 继续 |
 | budget | 告知已知金额、未报价次数、耗时，用户同意追加后带新上限继续 |
@@ -83,7 +85,9 @@ rtk proxy ~/.bun/bin/bun "${CLAUDE_SKILL_DIR}/scripts/orch.ts" continue --mode d
 rtk proxy ~/.bun/bin/bun "${CLAUDE_SKILL_DIR}/scripts/orch.ts" status --run "<目录>"
 ```
 
-`--by` 必填，不冒填其他模型来绕过家族限制。中断恢复前必须确认旧 worker 已停；无法确认就拒绝推进。需要 stop 时，先告知用户，再显式运行 `stop --run <目录>`；仅核实过身份的进程组会被终止。exec 改变命令名等身份不明情况需人工核查，不能当作已停。
+`--by` 必填，能力名必须在本机 models 或 catalog 中有明确家族；未知名字在修改状态前报错，不冒填其他模型。continue 的参数校验失败不改变等待状态；修正参数后可直接重试。`--max-minutes` 累计脚本运行时间，不含交给主控后的人工等待。主控审查和下一轮 worker 审查使用不同轮号，保留历史证据。
+
+中断恢复前必须确认旧 worker 已停；无法确认就拒绝推进。需要 stop 时，先告知用户，再显式运行 `stop --run <目录>`；仅核实过身份的进程组会被终止。exec 改变命令名等身份不明情况需人工核查，不能当作已停。
 
 退出码：0 完成；1 卡住/P1；2 用法或配置错误；3 交给主会话；4 中断；5 待验证。done 运行不盲目重放；旧版本状态不自动迁移。
 
@@ -92,6 +96,7 @@ rtk proxy ~/.bun/bin/bun "${CLAUDE_SKILL_DIR}/scripts/orch.ts" status --run "<�
 - 默认严格：当前没有通过真实五层隔离探针的 provider，默认不准入；可能全部阶段都交主控。不要为跑通而自行填 `unsafe_read` / `unsafe_exec`。
 - 用户可在本机 `[safety]` 逐 provider 显式配置例外；汇总必须说明未隔离风险。pi 永远不能执行。配置中的沙箱参数不等于已验证的强制边界。
 - `--allow` 只能记录用户授权。类别为 `deps`、`network:<域名,...>` / `network:*`、`publish`、`deploy`、`push`、`data`、`prod-config`。裸 `network` 报错；不同类别互不包含。主控不得依据方案自行加权限。
+- 方案明确列出依赖清单路径时提前询问 `deps`；宽泛路径不视为授权。执行后发现未授权的清单增量，验收前交接，授权后接着验收，不重做执行。
 - 验收使用本机沙箱、最小环境和专用临时目录；没有支持的沙箱不裸跑。域名授权不能让不支持域名隔离的层全联网；`network:*` 才开放全部出站。
 - 联网放开后，不声称 `.git` 只读能阻止发布/推送。凭证隔离、方案闸门与提示词不是完整的物理保证；macOS 钥匙串等仍待实测。
 - 敏感路径读取前排除，符号链接不跟随；回传、diff、验收输出、账本、错误、汇总统一扫描。安全标记不因脱敏后能继续解析而消失。
@@ -101,6 +106,8 @@ rtk proxy ~/.bun/bin/bun "${CLAUDE_SKILL_DIR}/scripts/orch.ts" status --run "<�
 ## 配置与验证
 
 配置为 `~/.config/orchestrate/models.conf` + `routing.toml`（可用 `ORCHESTRATE_HOME` 改目录）。两者全无可用示例并说明；只缺一个直接报错，不静默回退。`--sample` 显式使用示例。能力家族和支持 effort 来自 `references/catalog.toml`，本机 ID 不参与猜测。
+
+执行池只由有效方案的 `exec_type` 选择；旧 `default_pool` 仅兼容读取，新示例和配置提案不再生成该字段。
 
 ```bash
 rtk proxy "${CLAUDE_SKILL_DIR}/scripts/config.sh" preflight

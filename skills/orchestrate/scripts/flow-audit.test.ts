@@ -6,9 +6,22 @@ import { loadConfig } from "./config.ts"
 import { continueFlow, runFlow, type FlowOptions, type Workspace } from "./flow.ts"
 import { UnavailableCache } from "./runtime.ts"
 import { emptyUsage } from "./providers/types.ts"
+import { DirectoryWorkspace } from "./directory-workspace.ts"
 
 const roots: string[] = []
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }) })
+
+test("non-git coverage gaps are informational but changes to omitted files still invalidate the snapshot", () => {
+  const root = mkdtempSync(path.join(tmpdir(), "orch-coverage-audit-")); roots.push(root)
+  writeFileSync(path.join(root, "source.ts"), "export const answer = 42")
+  writeFileSync(path.join(root, "image.bin"), Buffer.from([0, 1]))
+  writeFileSync(path.join(root, "large.txt"), "x".repeat(1_000_001))
+  const workspace = new DirectoryWorkspace(root, path.join(root, "unused-run")), before = workspace.captureBaseline()
+  expect(before.evidenceGaps).toHaveLength(2); expect(workspace.checkSafety()).toEqual([])
+  expect(workspace.captureSnapshot().tree).toBe(before.tree)
+  writeFileSync(path.join(root, "image.bin"), Buffer.from([0, 1, 2]))
+  expect(workspace.captureSnapshot().tree).not.toBe(before.tree)
+})
 
 test("a controller second review cannot erase the first independent review's P1", async () => {
   const root = mkdtempSync(path.join(tmpdir(), "orch-flow-audit-"))

@@ -18,6 +18,8 @@ export interface Snapshot {
   safeHead: string
   sensitive: Record<string, SensitiveStat>
   preexisting: string[]
+  evidenceGaps?: string[]
+  redactions?: string[]
 }
 
 function nulList(text: string): string[] {
