@@ -1,50 +1,28 @@
 import { commandFor } from "./providers/args.ts"
-import { parseClaude, parseCodex, parseGrok, parsePi } from "./providers/parse.ts"
-import type { Provider, ProviderResult, StageRequest } from "./providers/types.ts"
+import { parseProviderOutput } from "./providers/parse.ts"
+import { ProviderOutputError, unknownUsage, type Provider, type ProviderResult } from "./providers/types.ts"
+import { runProcess, type WorkerHooks } from "./runtime.ts"
+import { safeEnv, scanText } from "./safety.ts"
 
-const parsers = {
-  claude: parseClaude,
-  codex: parseCodex,
-  grok: parseGrok,
-  pi: parsePi,
-}
-
-function clip(text: string): string {
-  const trimmed = text.replace(/\s+/g, " ").trim()
-  return trimmed.length > 500 ? trimmed.slice(-500) : trimmed
-}
-
-/** 按 P0 实测的参数启动对应 CLI，并把 stdout 解析成用量。 */
-export function cliProvider(timeoutMs = 8 * 60 * 1000): Provider {
+export function cliProvider(hooks: WorkerHooks = {}): Provider {
   return {
-    async run(req: StageRequest): Promise<ProviderResult> {
-      const command = commandFor(req)
-      let stdout = ""
-      let stderr = ""
-      let code = 1
-      try {
-        const proc = Bun.spawn(command.argv, {
-          cwd: req.cwd,
-          stdout: "pipe",
-          stderr: "pipe",
-          signal: AbortSignal.timeout(timeoutMs),
-        })
-        ;[stdout, stderr, code] = await Promise.all([
-          new Response(proc.stdout).text(),
-          new Response(proc.stderr).text(),
-          proc.exited,
-        ])
-      } catch (error) {
-        const name = (error as Error).name
-        if (name === "TimeoutError" || name === "AbortError") throw new Error("timeout")
+    async run(req): Promise<ProviderResult> {
+      let command
+      try { command = commandFor(req) }
+      catch (error) {
+        const failure = new ProviderOutputError(String(error), { text: "", sessionId: null, model: req.model, usage: unknownUsage(), models: {} })
+        Object.assign(failure, { notSent: true })
+        throw failure
+      }
+      const output = await runProcess(command.argv, { cwd: req.cwd, env: req.env ?? safeEnv(req.provider), timeoutMs: req.timeoutMs ?? 20 * 60_000, role: req.role, ...hooks })
+      const result = parseProviderOutput(req.provider, output.stdout, output.stderr)
+      if (output.timedOut || output.code !== 0 || result.error) {
+        const message = scanText(`${output.timedOut ? "timeout" : result.error ?? `退出码 ${output.code}`}\n${output.stderr}\n${result.text}`).text.slice(-1500)
+        const error = new ProviderOutputError(message, result)
+        Object.assign(error, { timedOut: output.timedOut, notSent: output.notSent })
         throw error
       }
-      if (code !== 0) throw new Error(clip(`${stderr}\n${stdout}`) || `退出码 ${code}`)
-      try {
-        return parsers[req.provider](stdout)
-      } catch (error) {
-        throw new Error(clip(`${(error as Error).message}\n${stderr}`))
-      }
+      return result
     },
   }
 }

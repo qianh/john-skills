@@ -1,0 +1,46 @@
+# Capability names are independent of local provider model IDs.
+# These are compatibility defaults, not evidence of model quality or isolation.
+["opus-5.5"]
+family = "anthropic"
+match = ['claude-opus-5[.-]5']
+efforts.claude = ["low", "medium", "high", "xhigh", "max"]
+efforts.pi = ["off", "minimal", "low", "medium", "high", "xhigh", "max"]
+
+["sonnet-5.5"]
+family = "anthropic"
+match = ['claude-sonnet-5[.-]5']
+efforts.claude = ["low", "medium", "high", "xhigh", "max"]
+
+["haiku-5.5"]
+family = "anthropic"
+match = ['claude-haiku-5[.-]5']
+efforts.claude = ["low", "medium", "high", "xhigh", "max"]
+efforts.pi = ["off", "minimal", "low", "medium", "high", "xhigh", "max"]
+
+["gpt-6.1-sol"]
+family = "openai"
+match = ['gpt-6[.-]1-sol']
+efforts.codex = ["low", "medium", "high", "xhigh", "max"]
+efforts.pi = ["off", "minimal", "low", "medium", "high", "xhigh", "max"]
+
+["grok-4.7"]
+family = "xai"
+match = ['grok-4[.-]7$']
+efforts.grok = ["low", "medium", "high", "xhigh"]
+
+["grok-4.7-fast"]
+family = "xai"
+match = ['grok-4[.-]7-(build-)?fast']
+efforts.grok = ["low", "medium", "high", "xhigh"]
+
+["glm-5.3-flash"]
+family = "zhipu"
+match = ['glm-5[.-]3-flash']
+efforts.grok = ["low", "high", "max"]
+efforts.pi = ["off", "minimal", "low", "medium", "high", "xhigh", "max"]
+
+["deepseek-v4.1-flash"]
+family = "deepseek"
+match = ['deepseek-v4[.-]1-flash']
+efforts.grok = ["low", "high", "max"]
+efforts.pi = ["off", "minimal", "low", "medium", "high", "xhigh", "max"]

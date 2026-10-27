@@ -1,0 +1,6 @@
+{"type":"thread.started","thread_id":"00000000-0000-4000-8000-000000000164"}
+{"type":"turn.started"}
+{"type":"item.completed","item":{"id":"item-0","type":"agent_message","text":"I will inspect the code."}}
+{"type":"item.completed","item":{"id":"item-1","type":"command_execution","command":"read fixture","aggregated_output":"fixture","exit_code":0,"status":"completed"}}
+{"type":"item.completed","item":{"id":"item-2","type":"agent_message","text":"{\"p1\":[],\"p2\":[],\"criteria\":[],\"out_of_scope\":[],\"reviewed_tree\":\"fixture-tree\"}"}}
+{"type":"turn.completed","usage":{"input_tokens":1000,"cached_input_tokens":400,"output_tokens":80}}

@@ -1,0 +1,24 @@
+{
+  "type": "result",
+  "subtype": "success",
+  "result": "second invocation",
+  "session_id": "2c439c25-b6e5-4eb3-b36a-4401d0f4a36c",
+  "total_cost_usd": 0.00217173,
+  "usage": {
+    "input_tokens": 20,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 7500,
+    "output_tokens": 80,
+    "output_tokens_details": { "thinking_tokens": 10 }
+  },
+  "modelUsage": {
+    "claude-haiku-5-5": {
+      "inputTokens": 22,
+      "outputTokens": 459,
+      "cacheReadInputTokens": 10723,
+      "cacheCreationInputTokens": 4749,
+      "thinkingTokens": 305,
+      "costUSD": 0.00217173
+    }
+  }
+}

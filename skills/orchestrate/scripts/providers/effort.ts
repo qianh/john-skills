@@ -1,5 +1,4 @@
-// 思考程度。允许的档位来自 2026-10-25 的实测，不支持的档位在发出请求前改到最近的一档。
-// grok 会在请求发出前拒绝非法档位，并在报错里给出该模型允许的列表。
+// 支持的档位来自路由或能力目录，不按模型 ID 或 provider 猜测。
 
 const ORDER = ["off", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"]
 
@@ -29,25 +28,6 @@ function nearest(requested: string, allowed: string[]): string {
   return best
 }
 
-/** 实测过的允许档位。没命中的模型不改档，交给 CLI 自己拒绝。 */
-export function allowedEfforts(provider: string, model: string): string[] | null {
-  if (provider === "claude") return ["low", "medium", "high", "xhigh", "max"]
-  if (provider === "codex") {
-    if (model.includes("terra")) return ["low", "medium", "high", "xhigh", "max", "ultra"]
-    return ["low", "medium", "high", "xhigh", "max"]
-  }
-  if (provider === "pi") return ["off", "minimal", "low", "medium", "high", "xhigh", "max"]
-  if (provider === "grok") {
-    if (model.includes("glm-5.3-flash") || model.includes("deepseek-v4")) {
-      return ["low", "high", "max"]
-    }
-    // grok-4.7 实测为 low/medium/high/xhigh。build-fast 只实测了 low 能用，其余档先按同一组，
-    // CLI 会在请求前拒绝非法值。
-    if (model.includes("grok-4.7")) return ["low", "medium", "high", "xhigh"]
-  }
-  return null
-}
-
 /** 在一份明确的允许列表里取最近的档位。距离相同取更高的一档。 */
 export function pickEffort(requested: string, allowed: string[]): string {
   if (!allowed.length) throw new Error("允许的思考程度是空的")
@@ -55,9 +35,10 @@ export function pickEffort(requested: string, allowed: string[]): string {
   return nearest(requested, allowed)
 }
 
-export function clampEffort(provider: string, model: string, requested: string): EffortChoice {
-  const allowed = allowedEfforts(provider, model)
+export function clampEffort(provider: string, model: string, requested: string, allowed?: string[] | null): EffortChoice {
+  if (!ORDER.includes(requested)) throw new Error(`未知思考程度: ${requested}`)
   if (!allowed) return { effort: requested }
+  if (!allowed.length || allowed.some((effort) => !ORDER.includes(effort))) throw new Error("允许的思考程度不合法")
   if (allowed.includes(requested)) return { effort: requested }
   const effort = nearest(requested, allowed)
   return { effort, adjusted: `${provider} 上的 ${model} 没有 ${requested}，改用 ${effort}` }

@@ -1,53 +1,112 @@
 ---
 name: orchestrate
-description: 多模型调度。大活一次跑完探索、plan、执行、review；小活由主控自己做。用做好的模型写方案，用执行模型改代码，用另一个家族的模型审查。当用户输入 /orchestrate、说"调度/编排多个模型"、"让不同模型分工"、"用 orch 跑这个任务"时触发。
+description: 多模型调度。大活一次完成探索、方案、执行、验收、独立审查和修复；小活由主控自己做。支持只出方案、只读审查、检查点恢复和诚实记账。当用户输入 /orchestrate、说“调度/编排多个模型”“让不同模型分工”“用 orch 跑这个任务”时触发。
 ---
 
 # Orchestrate
 
-流程和一个模型从头做到尾一样：看代码、写方案、改代码、跑测试、审查。差别只是每个阶段换一个模型，由脚本一次跑完。主控不要自己逐步派发。
+一次命令推进全流程，不让主控逐步派发 worker。只有证据完整才报告完成；缺模型、授权、预算或人工证据时给出唯一交接步骤。
 
 ## 分流
 
-先判断，再决定要不要跑脚本。
+- 小活：两文件以内、方案明确、容易验证，或只是问答/小范围排查，由主控自己做，不外派。
+- 大活：跨多个模块、新功能、设计取舍、需要独立审查，运行脚本。
+- 用户只要审查时用 `review`，不要启动改代码的链路；只要方案用 `--plan-only`。
+- 主控模型的能力影响分流，不设写死的 Sonnet/Opus 门槛，也不为了让每个模型都有活硬塞阶段。
 
-- **小活**：两个文件以内、方案明确、一眼能验证；问答；小范围排查。主控自己做，不调用脚本。
-- **大活**：多个文件、新功能、要做设计取舍、需要另一个模型审查。运行下面的命令。
-
-主控是 sonnet 时，小活自己做很便宜，只有确实大的活才外派。主控是 opus 时，小活也可以外派。判不准就当大活。
-
-## 怎么跑
+## 运行
 
 ```bash
-~/.bun/bin/bun "${CLAUDE_SKILL_DIR}/scripts/orch.ts" run --cwd "$PWD" "<目标>"
+rtk proxy ~/.bun/bin/bun "${CLAUDE_SKILL_DIR}/scripts/orch.ts" run --cwd "$PWD" "<目标>"
 ```
 
-用户点名执行模型时加上 `--exec <models.conf 里的别名>`。
+- Claude Code：使用 Bash 的 `run_in_background: true`，等完成通知后读取短汇总；不要用普通前台工具的十分钟默认上限跑完整任务。
+- 其他宿主：给足前台等待时长，或使用宿主支持的后台任务；用 `status --run <目录>` 查看进度，不重复启动任务。
+- stderr 是进度，stdout 是不超过 30 行的汇总。运行记录在实际 git-dir 的 `orchestrate/<run>/`（兼容 worktree）。运行期间不要手动改工作区；外部改动会计入作者并使旧证据失效。
+- 会改代码的运行必须在 Git 仓库；拒绝冲突、稀疏检出、skip-worktree 和 submodule，不为支持它们偷偷改 index。
 
-stdout 是一份短汇总。探索笔记、方案、review 和用量在 `.git/orchestrate/<run>/`。主控只读汇总，用自己的话告诉用户，不要把子模型的原文贴出来。账单里 CLI 回报的金额是实际花费。「全程用 opus」是按价格列估算的，不是实际扣款。
+可选参数：
 
-汇总里出现「交给主会话」时，主控只做那一步：方案写入汇总指定的 `plan.md`，审查写入指定的 `review-N.md`，执行就在工作区改代码。不要把后面的阶段一起做完。做完后执行汇总里的 `continue --run`。审查交给主控时，若主控和执行模型是同一家族，汇总会标明独立性不足。
+```bash
+# 用户点名执行能力；未知名字立即报错
+.../orch.ts run --exec sonnet-5.5 "<目标>"
+# 出完方案先停下
+.../orch.ts run --plan-only "<目标>"
+# 已知金额上限；未知报价还需调用次数/总时长上限
+.../orch.ts run --budget 1.5 --max-calls 12 --max-minutes 60 "<目标>"
+# 默认单份只读审查；--dual 才要求两个不同家族
+.../orch.ts review --author sonnet-5.5 --paths 'src/**' "<审查目标>"
+.../orch.ts review --base HEAD~1 --dual "<审查目标>"
+```
 
-脚本会自己做完这些事：
+只读审查默认看“安全 HEAD → 当前快照”，不执行验收、不自动修复；没给 `--author` 时不能声称审查独立于作者。非 Git 只读记录位于 `${XDG_STATE_HOME:-~/.local/state}/orchestrate/`，大文件/二进制等证据缺口如实标注。
 
-1. 预检：CLI 在不在、登录了没有。缺了就换同一模型的下一个外壳，再换这个角色的备选模型。这一步的外壳和备选都失败时，汇总写「交给主会话」，由主控自己做这一步。
-2. haiku 看一遍仓库，把笔记写下来。
-3. opus 按笔记写方案，定执行类型和验收命令。
-4. 一个执行模型按方案改代码、自己跑测试。一个会话做完。
-5. 另一个家族的模型审查。有必须改的问题，就续接原来的执行会话修，再续接原来的审查会话复审，最多两轮。
-6. 脚本再跑一遍方案里的验收命令。模型自己说通过不算数。
+## 正常流程
 
-不 commit，不 push，除非用户另外要求。
+预检/锁/基线 → 一次廉价探索 → JSON 方案 → 授权闸门 → 执行 → 脚本验收 → 独立审查 → 人工核验（如有）→ 最终快照判定。
 
-## 配置
+- 验收只来自 `plan.json` 的 command 标准，不从 Markdown、禁止项或全文猜命令。`rtk bun test`、`npx`、项目脚本都可作为单行命令。
+- 验收失败先修，再审查；与审查 P1 共用默认两轮修复额度。仅成功建立的会话才续接；换人/安全配置变化新开会话，带完整接手上下文。
+- 每次审查都排除所有代码作者家族。找不到独立候选就交接，不悄悄跳过。
+- review 格式无效只纠正一次。P1/P2、check 标准、越界路径、快照 id 都必须校验；格式不认识不等于无问题。
+- “完成”需要最终验收、审查、当前快照一致，check 标准有人工证据，且无安全标记。模型自报通过不是证据。
 
-`~/.config/orchestrate/models.conf` 和 `routing.toml`。两个都没有时，用本 skill 的 `references/` 示例。
+## 交接与恢复
 
-预检：`scripts/config.sh preflight`
+汇总给出类型、原因、目标文件、JSON schema 路径和唯一下一步。主控只做指定阶段，不顺手做后续阶段。
 
-## 红线
+| 类型 | 主控行动 |
+|---|---|
+| plan | 按 schema 写 `plan.json`，不是只写 Markdown |
+| exec / fix | 按方案/失败证据/P1 改代码，不 commit |
+| review | 只读审查，写指定的 `review-N.json` |
+| check | 核验全部 check 标准，写 `checks.json`，包含 `checked_tree` 和逐条 evidence |
+| permission | 向用户说明所需权限，明确同意后带对应 `--allow` 继续 |
+| budget | 告知已知金额、未报价次数、耗时，用户同意追加后带新上限继续 |
 
-- 不给任何 CLI 加 bypass、yolo、always-approve。
-- pi 不承担执行。只读角色关掉子会话。
-- 提示词和汇总里不带密钥、token、`.env` 内容。
-- 子模型的输出要经过汇总里的脚本复核，不当成结论。
+```bash
+rtk proxy ~/.bun/bin/bun "${CLAUDE_SKILL_DIR}/scripts/orch.ts" continue --run "<目录>" --by "<主控实际能力名>"
+rtk proxy ~/.bun/bin/bun "${CLAUDE_SKILL_DIR}/scripts/orch.ts" status --run "<目录>"
+```
+
+`--by` 必填，不冒填其他模型来绕过家族限制。中断恢复前必须确认旧 worker 已停；无法确认就拒绝推进。需要 stop 时，先告知用户，再显式运行 `stop --run <目录>`；仅核实过身份的进程组会被终止。exec 改变命令名等身份不明情况需人工核查，不能当作已停。
+
+退出码：0 完成；1 卡住/P1；2 用法或配置错误；3 交给主会话；4 中断；5 待验证。done 运行不盲目重放；旧版本状态不自动迁移。
+
+## 权限与安全
+
+- 默认严格：当前没有通过真实五层隔离探针的 provider，默认不准入；可能全部阶段都交主控。不要为跑通而自行填 `unsafe_read` / `unsafe_exec`。
+- 用户可在本机 `[safety]` 逐 provider 显式配置例外；汇总必须说明未隔离风险。pi 永远不能执行。配置中的沙箱参数不等于已验证的强制边界。
+- `--allow` 只能记录用户授权。类别为 `deps`、`network:<域名,...>` / `network:*`、`publish`、`deploy`、`push`、`data`、`prod-config`。裸 `network` 报错；不同类别互不包含。主控不得依据方案自行加权限。
+- 验收使用本机沙箱、最小环境和专用临时目录；没有支持的沙箱不裸跑。域名授权不能让不支持域名隔离的层全联网；`network:*` 才开放全部出站。
+- 联网放开后，不声称 `.git` 只读能阻止发布/推送。凭证隔离、方案闸门与提示词不是完整的物理保证；macOS 钥匙串等仍待实测。
+- 敏感路径读取前排除，符号链接不跟随；回传、diff、验收输出、账本、错误、汇总统一扫描。安全标记不因脱敏后能继续解析而消失。
+- 不给任何 CLI 加 bypass、yolo、always-approve；只读角色移除 Bash/写工具并禁止子会话。
+- 不 commit、不 push、不安装新依赖，除非用户对相应动作已明确授权。
+
+## 配置与验证
+
+配置为 `~/.config/orchestrate/models.conf` + `routing.toml`（可用 `ORCHESTRATE_HOME` 改目录）。两者全无可用示例并说明；只缺一个直接报错，不静默回退。`--sample` 显式使用示例。能力家族和支持 effort 来自 `references/catalog.toml`，本机 ID 不参与猜测。
+
+```bash
+rtk proxy "${CLAUDE_SKILL_DIR}/scripts/config.sh" preflight
+rtk proxy "${CLAUDE_SKILL_DIR}/scripts/config.sh" init --propose
+# 审阅提案；确认后才 --apply，现有配置先备份
+rtk proxy "${CLAUDE_SKILL_DIR}/scripts/config.sh" init --apply
+rtk proxy "${CLAUDE_SKILL_DIR}/scripts/config.sh" check
+rtk proxy "${CLAUDE_SKILL_DIR}/scripts/config.sh" efforts --sample
+rtk proxy "${CLAUDE_SKILL_DIR}/scripts/config.sh" isolation verify
+rtk proxy "${CLAUDE_SKILL_DIR}/scripts/config.sh" cache clear
+```
+
+`isolation verify` 只跑合成本地探针，不调用模型、不检查真实凭证、不开放 provider。`isolation <provider>` 目前明确返回未验证；真实认证/读取/写入/Git/网络/凭证隔离需另行授权与实测。付费 probe 需要 `--confirm-paid`，也不能绕过安全准入。
+
+## 汇报与账本
+
+主控以汇总为主，按风险抽查 `plan.md`、最新 `review-N.json`、`verify.txt` 和本次增量；核对证据后再采信，不只转述 worker。
+
+- `usage.jsonl` 每次调用含失败、重试、超时，金额来源区分 CLI 报价/价格估算/未知/确认未发送；未知不当零，有未知时合计显示 `≥`。
+- Claude 累计报价按会话取差；优先原生增量字段。夹具验证不等于真实续接账单已验证。
+- “本次 token 按 opus 单价重算”只是换单价估算，不是 Opus 单独完成任务的真实花费。
+- `orch.ts report [--root <运行根目录>]` 按位置/能力汇总调用、失败率、已知金额和修复轮次。
+- 4 类任务 × 3 组 × 2 次的真实 benchmark 需用户先给金额上限；未做之前不宣称已证实省钱。

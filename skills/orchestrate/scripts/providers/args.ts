@@ -8,7 +8,14 @@ export interface Command {
 }
 
 function promptOf(req: StageRequest): string {
+  if (req.provider === "pi" && req.schema) {
+    return `${req.prompt}\n\n回复中必须恰好包含一个 json 代码块，内容遵循下面的 JSON Schema：\n${JSON.stringify(req.schema)}`
+  }
   return req.prompt
+}
+
+function effortOf(req: StageRequest) {
+  return clampEffort(req.provider, req.model, req.effort, req.supportedEfforts)
 }
 
 /**
@@ -20,7 +27,7 @@ function promptOf(req: StageRequest): string {
  * --safe-mode 会忽略 --agents，自定义子会话固定不了模型。
  */
 export function claudeCommand(req: StageRequest): Command {
-  const choice = clampEffort("claude", req.model, req.effort)
+  const choice = effortOf(req)
   const readOnly = req.role !== "exec"
   const argv = [
     "claude", "-p",
@@ -36,6 +43,8 @@ export function claudeCommand(req: StageRequest): Command {
   ]
   if (readOnly) argv.push("--permission-prompts", "none")
   else argv.push("--allowedTools", "Bash,Read,Edit,Write,Grep,Glob")
+  if (req.schema) argv.push("--json-schema", JSON.stringify(req.schema))
+  if (req.sandbox?.settings) argv.push("--settings", JSON.stringify(req.sandbox.settings))
   if (req.resume) {
     if (!req.sessionId) throw new Error("续接 claude 需要 sessionId")
     argv.push("-r", req.sessionId)
@@ -53,7 +62,7 @@ export function claudeCommand(req: StageRequest): Command {
  * --ephemeral 不存在。续接用 -r。
  */
 export function grokCommand(req: StageRequest): Command {
-  const choice = clampEffort("grok", req.model, req.effort)
+  const choice = effortOf(req)
   const readOnly = req.role !== "exec"
   const argv = [
     "grok", "-p", promptOf(req),
@@ -71,6 +80,8 @@ export function grokCommand(req: StageRequest): Command {
     // 并发交给调度器，不让 grok 自己再开子会话，否则账拆不开。
     argv.push("--no-subagents", "--disallowed-tools", "Agent", "--max-turns", "30")
   }
+  if (req.schema) argv.push("--json-schema", JSON.stringify(req.schema))
+  if (req.sandbox?.profile) argv.push("--sandbox", req.sandbox.profile)
   if (req.resume) {
     if (!req.sessionId) throw new Error("续接 grok 需要 sessionId")
     argv.push("-r", req.sessionId)
@@ -83,16 +94,12 @@ export function grokCommand(req: StageRequest): Command {
 /**
  * pi：--no-mcp --tools 能把冷启动压到约 7k token，并且直接给出金额。
  * 非法思考程度只警告、不失败，所以必须在这里挡掉。
- * --thinking off 在 glm-5.3-flash 上会被改成 low。
  * pi 没有文件沙箱，不能执行。
  */
 export function piCommand(req: StageRequest): Command {
   if (req.role === "exec") throw new Error("pi 不能承担执行：写权限限制不住")
-  const choice = clampEffort("pi", req.model, req.effort)
-  const effort = choice.effort === "off" && req.model.includes("glm-") ? "low" : choice.effort
-  const adjusted = effort === choice.effort
-    ? choice.adjusted
-    : `${choice.adjusted ?? ""}pi 上的 glm 会把 off 改成 low，直接传 low`.trim()
+  const choice = effortOf(req)
+  const effort = choice.effort
   const argv = [
     "pi", "-p",
     "--mode", "json",
@@ -105,32 +112,31 @@ export function piCommand(req: StageRequest): Command {
   if (req.sessionId) argv.push("--session-id", req.sessionId)
   else argv.push("--no-session")
   argv.push(promptOf(req))
-  return { argv, effort, adjusted }
+  return { argv, effort, adjusted: choice.adjusted }
 }
 
 /**
- * codex 0.42.0：--ephemeral 已删除。--json 仍可用但已标记弃用。
- * 本机 ChatGPT 登录拒绝了 gpt-6-astra 和 gpt-6-luna，成功调用的用量格式没有实测到，
- * 解析器按会话记录里的 token_count 写。approval_policy=never 配 read-only 沙箱，不加 bypass。
+ * codex 0.164.0：-s、--color、-C 属于 exec 父命令，必须放在 resume 前。
+ * --help 已离线核对参数位置；真实模型调用及沙箱强度仍需单独实测。
  */
 export function codexCommand(req: StageRequest): Command {
-  const choice = clampEffort("codex", req.model, req.effort)
+  const choice = effortOf(req)
   const readOnly = req.role !== "exec"
   const argv = [
     "codex", "exec",
-    "--skip-git-repo-check",
-    "-m", req.model,
     "-s", readOnly ? "read-only" : "workspace-write",
-    "-c", 'approval_policy="never"',
-    "-c", `model_reasoning_effort="${choice.effort}"`,
-    "--json",
     "--color", "never",
     "-C", req.cwd,
   ]
   if (req.resume) {
     if (!req.sessionId) throw new Error("续接 codex 需要 sessionId")
-    argv.splice(2, 0, "resume", req.sessionId)
+    argv.push("resume", req.sessionId)
   }
+  argv.push("--skip-git-repo-check", "-m", req.model,
+    "-c", 'approval_policy="never"',
+    "-c", `model_reasoning_effort="${choice.effort}"`, "--json")
+  if (req.schema && !req.schemaPath) throw new Error("codex 结构化输出需要 schemaPath")
+  if (req.schemaPath) argv.push("--output-schema", req.schemaPath)
   argv.push(promptOf(req))
   return { argv, effort: choice.effort, adjusted: choice.adjusted }
 }
