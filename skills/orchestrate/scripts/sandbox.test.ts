@@ -10,7 +10,7 @@ test("network scopes and destructive categories remain independent", () => {
   expect(parseAllow("deps,network:registry.npmjs.org,example.org,push")).toEqual(["deps", "network:registry.npmjs.org", "network:example.org", "push"])
   expect(() => parseAllow("network")).toThrow("范围")
   expect(() => parseAllow("network:https://example.org")).toThrow("域名")
-  for (const [cmd, needed] of [["git push origin main", "push"], ["npm publish", "publish"], ["make deploy", "deploy"], ["rm -rf output", "data"], ["npm install thing", "deps"]]) expect(commandPermissions(cmd)).toContain(needed)
+  for (const [cmd, needed] of [["git push origin main", "push"], ["npm publish", "publish"], ["make deploy", "deploy"], ["rm -rf output", "data"], ["rm --recursive --force output", "data"], ["git clean -fdx", "data"], ["find . -delete", "data"], ["npm install thing", "deps"]]) expect(commandPermissions(cmd)).toContain(needed)
   const plan: Plan = { exec_type: "standard", criteria: [{ id: "C1", text: "release", kind: "command", commands: ["npm publish", "git push"] }], needs_permission: [], allowed_paths: ["**"], steps: ["release"], context: [] }
   expect(missingPermissions(plan, ["network:*"])).toEqual(["publish", "push"])
   expect(missingPermissions({ ...plan, needs_permission: [{ category: "other", reason: "manual action" }] }, ["network:*", "publish", "push"])).toEqual(["other"])

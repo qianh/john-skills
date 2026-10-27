@@ -67,6 +67,20 @@ test("a live lock owner is rejected without changing its lock", () => {
   expect(existsSync(lock)).toBe(false)
 })
 
+test("process identity stays parseable when the caller uses a localized locale", () => {
+  const { root, lock } = fixture()
+  const previous = process.env.LC_ALL
+  try {
+    process.env.LC_ALL = "zh_CN.UTF-8"
+    const release = acquireLock(lock, root)
+    release()
+    expect(existsSync(lock)).toBe(false)
+  } finally {
+    if (previous === undefined) delete process.env.LC_ALL
+    else process.env.LC_ALL = previous
+  }
+})
+
 test("a dead owner with an empty worker list can be reclaimed", () => {
   const { root, lock } = fixture()
   staleLock(root, lock)

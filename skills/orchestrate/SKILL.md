@@ -1,6 +1,6 @@
 ---
 name: orchestrate
-description: 多模型调度。默认使用简单模式（主控模型一路完成），显式开启后才使用动态路由模式（探索、方案、执行、验收、独立审查和修复）；小活由主控自己做。支持只出方案、只读审查、检查点恢复和诚实记账。当用户输入 /orchestrate、说“调度/编排多个模型”“让不同模型分工”“用 orch 跑这个任务”时触发。
+description: 多模型调度。默认使用简单模式（主控模型一路完成），显式开启后才使用动态路由模式（探索、方案、执行、验收、审查和修复）；小活由主控自己做。支持只出方案、只读审查、检查点恢复和诚实记账。当用户输入 /orchestrate、说“调度/编排多个模型”“让不同模型分工”“用 orch 跑这个任务”时触发。
 ---
 
 # Orchestrate
@@ -14,7 +14,7 @@ description: 多模型调度。默认使用简单模式（主控模型一路完�
 - **简单模式（`simple`）**：不开启动态路由，不调用 `orch.ts`，不启动外部 worker，也不读取路由配置。主控模型从理解、方案、实现、验收、复核到汇报一路完成；仍遵守项目规则、权限确认、敏感信息和不擅自 commit/push 等红线。简单模式没有独立 reviewer，主控必须把自审和测试结果明确标为主控证据。
 - **动态路由模式（`dynamic`）**：使用本页下面的 `orch.ts` 流程，由配置决定各阶段模型、外壳、思考档位、预算和恢复策略。
 
-选择优先级：用户本次明确指定（“简单模式”/“simple”或“动态路由”/“dynamic”） > `ORCHESTRATE_MODE` 环境变量 > 默认 `simple`。环境变量只能取 `simple` 或 `dynamic`；出现其他值时先报配置错误，不要猜测。用户只说 `/orchestrate` 时走原有主控模型路径，默认使用 `simple`；只有明确要求动态路由或显式设置 `ORCHESTRATE_MODE=dynamic` 才启动多模型流程。
+选择优先级：用户本次明确指定（“简单模式”/“simple”、或“动态路由”/“dynamic”/“让不同模型分工”） > `ORCHESTRATE_MODE` 环境变量 > 默认 `simple`。环境变量只能取 `simple` 或 `dynamic`；出现其他值时先报配置错误，不要猜测。用户只说 `/orchestrate` 时走原有主控模型路径，默认使用 `simple`；只有明确要求动态路由、多模型分工，或显式设置 `ORCHESTRATE_MODE=dynamic` 才启动多模型流程。
 
 模式选择要在任何模型调用或代码修改前亮明，例如：`运行模式：simple（主控模型一路完成，不启动动态路由）`。若选择简单模式，直接留在当前主控会话执行，不要运行下面的动态路由命令；若选择动态模式，才启动脚本。
 
@@ -31,7 +31,7 @@ description: 多模型调度。默认使用简单模式（主控模型一路完�
 ## 运行
 
 ```bash
-rtk proxy ~/.bun/bin/bun "${CLAUDE_SKILL_DIR}/scripts/orch.ts" run --cwd "$PWD" "<目标>"
+rtk proxy ~/.bun/bin/bun "${CLAUDE_SKILL_DIR}/scripts/orch.ts" run --mode dynamic --cwd "$PWD" "<目标>"
 ```
 
 - Claude Code：使用 Bash 的 `run_in_background: true`，等完成通知后读取短汇总；不要用普通前台工具的十分钟默认上限跑完整任务。
@@ -43,14 +43,14 @@ rtk proxy ~/.bun/bin/bun "${CLAUDE_SKILL_DIR}/scripts/orch.ts" run --cwd "$PWD" 
 
 ```bash
 # 用户点名执行能力；未知名字立即报错
-.../orch.ts run --exec sonnet-5.5 "<目标>"
+.../orch.ts run --mode dynamic --exec sonnet-5.5 "<目标>"
 # 出完方案先停下
-.../orch.ts run --plan-only "<目标>"
+.../orch.ts run --mode dynamic --plan-only "<目标>"
 # 已知金额上限；未知报价还需调用次数/总时长上限
-.../orch.ts run --budget 1.5 --max-calls 12 --max-minutes 60 "<目标>"
+.../orch.ts run --mode dynamic --budget 1.5 --max-calls 12 --max-minutes 60 "<目标>"
 # 默认单份只读审查；--dual 才要求两个不同家族
-.../orch.ts review --author sonnet-5.5 --paths 'src/**' "<审查目标>"
-.../orch.ts review --base HEAD~1 --dual "<审查目标>"
+.../orch.ts review --mode dynamic --author sonnet-5.5 --paths 'src/**' "<审查目标>"
+.../orch.ts review --mode dynamic --base HEAD~1 --dual "<审查目标>"
 ```
 
 只读审查默认看“安全 HEAD → 当前快照”，不执行验收、不自动修复；没给 `--author` 时不能声称审查独立于作者。非 Git 只读记录位于 `${XDG_STATE_HOME:-~/.local/state}/orchestrate/`，大文件/二进制等证据缺口如实标注。
@@ -61,9 +61,9 @@ rtk proxy ~/.bun/bin/bun "${CLAUDE_SKILL_DIR}/scripts/orch.ts" run --cwd "$PWD" 
 
 - 验收只来自 `plan.json` 的 command 标准，不从 Markdown、禁止项或全文猜命令。`rtk bun test`、`npx`、项目脚本都可作为单行命令。
 - 验收失败先修，再审查；与审查 P1 共用默认两轮修复额度。仅成功建立的会话才续接；换人/安全配置变化新开会话，带完整接手上下文。
-- 每次审查都排除所有代码作者家族。找不到独立候选就交接，不悄悄跳过。
+- 每次审查优先排除所有代码作者家族；找不到独立候选就交主控接管，不因内部 reviewer 缺失让整体任务卡死。
 - review 格式无效只纠正一次。P1/P2、check 标准、越界路径、快照 id 都必须校验；格式不认识不等于无问题。
-- “完成”需要最终验收、审查、当前快照一致，check 标准有人工证据，且无安全标记。模型自报通过不是证据。
+- “完成”需要最终验收、审查、当前快照一致，check 标准有人工证据，且无阻断性安全标记。独立 reviewer 是质量增强项，不是主控完成任务的硬前置；模型自报通过不是验收证据。
 
 ## 交接与恢复
 
@@ -79,7 +79,7 @@ rtk proxy ~/.bun/bin/bun "${CLAUDE_SKILL_DIR}/scripts/orch.ts" run --cwd "$PWD" 
 | budget | 告知已知金额、未报价次数、耗时，用户同意追加后带新上限继续 |
 
 ```bash
-rtk proxy ~/.bun/bin/bun "${CLAUDE_SKILL_DIR}/scripts/orch.ts" continue --run "<目录>" --by "<主控实际能力名>"
+rtk proxy ~/.bun/bin/bun "${CLAUDE_SKILL_DIR}/scripts/orch.ts" continue --mode dynamic --run "<目录>" --by "<主控实际能力名>"
 rtk proxy ~/.bun/bin/bun "${CLAUDE_SKILL_DIR}/scripts/orch.ts" status --run "<目录>"
 ```
 

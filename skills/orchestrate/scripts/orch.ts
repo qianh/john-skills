@@ -13,7 +13,7 @@ import { parseAllow } from "./sandbox.ts"
 import { SnapshotManager } from "./snapshot.ts"
 
 interface Args { command: string; goal: string; values: Record<string, string[]>; flags: Set<string> }
-const values = new Set(["cwd", "exec", "allow", "budget", "max-calls", "max-minutes", "run", "by", "base", "paths", "author", "root"])
+const values = new Set(["cwd", "exec", "allow", "budget", "max-calls", "max-minutes", "run", "by", "base", "paths", "author", "root", "mode"])
 const flags = new Set(["sample", "plan-only", "dual", "help"])
 export function parseArgs(argv: string[]): Args {
   const result: Args = { command: argv[0] ?? "help", goal: "", values: {}, flags: new Set() }
@@ -34,6 +34,11 @@ export function parseArgs(argv: string[]): Args {
   return result
 }
 function value(args: Args, name: string): string | undefined { return args.values[name]?.[0] }
+function routingMode(args: Args): "simple" | "dynamic" {
+  const raw = value(args, "mode") ?? process.env.ORCHESTRATE_MODE ?? "simple"
+  if (raw !== "simple" && raw !== "dynamic") throw new Error(`--mode / ORCHESTRATE_MODE 只能是 simple 或 dynamic，收到：${raw}`)
+  return raw
+}
 function number(args: Args, name: string, integer = false): number | undefined {
   const raw = value(args, name)
   if (raw === undefined) return undefined
@@ -91,13 +96,14 @@ export function report(root: string): string {
   return scanText([`账本：${runs} 次运行；修复 ${fixes} 轮（${unknownRounds} 次轮数未知，${unreadable} 份账本无法读取）`, ...Object.entries(rows).map(([key, row]) => `${key}：${row.calls} 次，失败率 ${(100 * row.failed / row.calls).toFixed(1)}%，已知金额 ${row.unknown ? "≥ " : ""}$${row.known.toFixed(4)}，已报价调用均价 ${row.priced ? `$${(row.known / row.priced).toFixed(4)}` : "未知"}，未报价 ${row.unknown} 次`)].join("\n")).text
 }
 const USAGE = `用法：
-  orch.ts run [--cwd DIR] [--exec 能力] [--plan-only] [--allow 类别,...] [--budget USD --max-calls N] "目标"
-  orch.ts review [--base REF] [--paths GLOB] [--author 能力] [--dual] "目标"
-  orch.ts continue --run DIR --by 能力 [--allow 用户批准的类别] [预算上限]
+  orch.ts run --mode dynamic [--cwd DIR] [--exec 能力] [--plan-only] [--allow 类别,...] [--budget USD --max-calls N] "目标"
+  orch.ts review --mode dynamic [--base REF] [--paths GLOB] [--author 能力] [--dual] "目标"
+  orch.ts continue --mode dynamic --run DIR --by 能力 [--allow 用户批准的类别] [预算上限]
   orch.ts status --run DIR | stop --run DIR | report [--root DIR] | preflight
-默认严格隔离；未实测的路由不自动调用。--sample 显式使用示例配置。`
+默认模式是 simple；本脚本只有显式 dynamic 或 ORCHESTRATE_MODE=dynamic 才会调用外部 worker。默认严格隔离；未实测的路由不自动调用。--sample 显式使用示例配置。`
 export async function main(argv = process.argv.slice(2)): Promise<number> {
   const args = parseArgs(argv)
+  const mode = routingMode(args)
   if (args.command === "help" || args.flags.has("help")) { console.log(USAGE); return 0 }
   if (args.command === "preflight") {
     for (const host of await detectHosts()) console.log(`${host.provider}\t${host.installed ? "已安装" : "未安装"}\t${host.loggedIn ? "已登录" : "未登录"}`)
@@ -114,7 +120,7 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
       state.status = "interrupted"; state.updatedAt = Date.now(); state.lastLog = "显式 stop 已停止记录在案的 worker"
       atomicJSON(path.join(runDir, "state.json"), sanitizeValue(state).value)
     }, true)
-    console.log("状态：已停止记录在案的 worker；可 continue --run <目录> --by <能力名>")
+    console.log("状态：已停止记录在案的 worker；可 continue --mode dynamic --run <目录> --by <能力名>")
     return 4
   }
   const cwd = path.resolve(value(args, "cwd") ?? process.cwd()), dir = gitDir(cwd)
@@ -122,6 +128,11 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
   if (!["run", "review", "continue"].includes(args.command)) throw new Error(USAGE)
   if (args.command === "continue" && !value(args, "by")) throw new Error("continue 必须提供 --by <主会话能力名>")
   if (args.command !== "continue" && !args.goal) throw new Error("缺少目标")
+  if (["run", "review"].includes(args.command) && mode === "simple") {
+    console.log("模式：simple（由当前主控模型完成，不启动动态路由）；不要运行 orch.ts，请回到主控会话继续任务。")
+    return 3
+  }
+  if (args.command === "continue" && mode !== "dynamic") throw new Error("continue 动态运行必须显式使用 --mode dynamic")
   const config = loadConfig(resolveConfigDir(args.flags.has("sample")))
   validateExecPin(value(args, "exec"), config)
   const allow = parseAllow(args.values.allow)

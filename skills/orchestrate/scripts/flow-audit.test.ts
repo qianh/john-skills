@@ -53,5 +53,6 @@ test("verification redacts a PEM before clipping away its identifying header", a
     cache: new UnavailableCache(path.join(root, "unavailable.json")), sleep: async () => {},
   })
   expect(readFileSync(path.join(root, "run", "verify.txt"), "utf8")).not.toContain("A".repeat(100))
-  expect(result.exitCode).toBe(5)
+  expect(result.exitCode).toBe(0)
+  expect(result.summary).toContain("脱敏：private-key")
 })

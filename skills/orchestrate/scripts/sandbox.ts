@@ -26,7 +26,7 @@ export function commandPermissions(command: string): string[] {
   if (/\bgit\s+(?:[^;&|]*\s)?push\b/.test(command)) result.push("push")
   if (/\b(?:npm|pnpm|yarn|bun|cargo)\s+(?:[^;&|]*\s)?publish\b|\btwine\s+upload\b/.test(command)) result.push("publish")
   if (/\bdeploy\b|\b(?:kubectl\s+apply|terraform\s+apply)\b/.test(command)) result.push("deploy")
-  if (/\brm\s+(?:-[\w]*r[\w]*\s+-[\w]*f[\w]*|-[\w]*f[\w]*r[\w]*|-[\w]*r[\w]*f[\w]*)\b|\b(?:DROP|TRUNCATE)\s+(?:TABLE|DATABASE)\b/i.test(command)) result.push("data")
+  if (/\brm\b[\s\S]*(?:--recursive|--force|-[^-\s]*r[^\s]*|-[^-\s]*f[^\s]*)|\bgit\s+clean\b|\bfind\b[\s\S]+(?:-delete|-exec\s+[^;]*\brm\b)|\b(?:DROP|TRUNCATE)\s+(?:TABLE|DATABASE)\b/i.test(command)) result.push("data")
   if (/\b(?:npm|pnpm|yarn|bun|pip|pip3|uv|cargo)\s+(?:add|install)\b|\bgo\s+get\b/.test(command)) result.push("deps")
   return result
 }
@@ -81,7 +81,7 @@ export function sandboxProfile(options: SandboxOptions): string {
   if (!options.allow.includes("network:*")) rules.push("(deny network*)")
   rules.push(`(deny file-read* (require-all (regex ${regexLiteral(`(^|/)${ciLiteral(".env")}($|\\.)`)}) (require-not (regex ${regexLiteral(`\\.(${["example", "sample", "template"].map(ciLiteral).join("|")})$`)}))))`)
   const bases = [".npmrc", ".pypirc", ".netrc", ".git-credentials", ".aws", ".ssh", "secrets"].map(ciLiteral)
-  const patterns = [...bases, `[^/]*\\.(${["pem", "key", "p12", "pfx", "jks", "keystore", "kdbx"].map(ciLiteral).join("|")})`, `${ciLiteral("id_")}(${["rsa", "ed25519", "ecdsa"].map(ciLiteral).join("|")})[^/]*`, ...["secret", "credential", ".tfstate"].map((s) => `[^/]*${ciLiteral(s)}[^/]*`), `${ciLiteral("kubeconfig")}[^/]*`]
+  const patterns = [...bases, `[^/]*\\.(${["pem", "key", "p12", "pfx", "jks", "keystore", "kdbx"].map(ciLiteral).join("|")})`, `${ciLiteral("id_")}(${["rsa", "ed25519", "ecdsa"].map(ciLiteral).join("|")})[^/]*`, `${ciLiteral(".tfstate")}[^/]*`, `${ciLiteral("kubeconfig")}[^/]*`]
   rules.push(`(deny file-read* (regex ${regexLiteral(`(^|/)(${patterns.join("|")})(/|$)`)}))`)
   for (const p of [...credentialPaths.map((p) => path.join(homedir(), p)), ...(options.sensitivePaths ?? []).map((p) => path.resolve(cwd, p))]) rules.push(`(deny file-read* (subpath ${quote(real(p))}))`)
   for (const glob of options.sensitiveExtra ?? []) {

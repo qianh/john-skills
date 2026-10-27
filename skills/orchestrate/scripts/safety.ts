@@ -12,6 +12,7 @@ export const DEFAULT_SENSITIVE_GLOBS = [
   "**/*.tfstate*", "**/secrets/**", "**/*secret*", "**/*credential*",
   "**/kubeconfig*", "**/.aws/**", "**/.ssh/**",
 ] as const
+const SOURCE_EXTENSIONS = new Set([".c", ".cc", ".cpp", ".cs", ".go", ".h", ".hpp", ".java", ".js", ".jsx", ".kt", ".php", ".py", ".rb", ".rs", ".swift", ".ts", ".tsx", ".vue"])
 const DEFAULT_SENSITIVE_MATCHERS = DEFAULT_SENSITIVE_GLOBS.map((glob) => ({ glob, matcher: new Bun.Glob(glob) }))
 
 const HOME_CREDENTIALS = [
@@ -33,6 +34,7 @@ export function isSensitivePath(file: string, extra: readonly string[] = []): bo
   if (parts.some((part) => ["secrets", ".aws", ".ssh"].includes(part))) return true
   if (DEFAULT_SENSITIVE_MATCHERS.some(({ glob, matcher }) => {
     if (sampleEnv && (glob === "**/.env" || glob === "**/.env.*")) return false
+    if (SOURCE_EXTENSIONS.has(path.posix.extname(lower)) && ["**/*secret*", "**/*credential*"].includes(glob)) return false
     return matcher.match(lower)
   })) return true
   return extra.some((glob) => {
@@ -58,6 +60,8 @@ export function scanText(input: string): { text: string, flags: string[] } {
   text = text.replace(/-----BEGIN (?:[A-Z0-9]+ )*PRIVATE KEY-----[\s\S]*?(?:-----END (?:[A-Z0-9]+ )*PRIVATE KEY-----|$)/g, () => redact("private-key"))
   text = text.replace(/(\b[A-Z0-9_]*(?:api[_-]?key|secret|token|password)[A-Z0-9_]*\b["']?\s*[:=]\s*["']?)([^\s"',;}\]]{12,})/gi, (_, prefix: string, value: string) => {
     if (value.startsWith("[redacted:")) return prefix + value
+    // References and calls are source code, not embedded credential values.
+    if (/^(?:process\.env\.[A-Z0-9_]+|[A-Za-z_$][\w$]*\([^)]*\)|[A-Za-z_$][\w$]*\.[A-Za-z_$][\w$]*)$/.test(value)) return prefix + value
     return prefix + redact("credential-value")
   })
   const patterns: [string, RegExp][] = [

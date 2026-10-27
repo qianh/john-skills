@@ -8,7 +8,7 @@ import { credentialReadPaths, isSensitivePath, safeEnv, sanitizeValue, scanText 
 describe("sensitive path policy", () => {
   test("matches root/nested paths and does not exempt keys inside template directories", () => {
     for (const file of [".env", ".env.local", "app/.env.prod", "a.pem", "a.key", "a.p12", "a.pfx", "a.jks", "a.keystore", "id_rsa.pub", "id_ed25519", "id_ecdsa.test", ".npmrc", "app/.pypirc", ".netrc", ".git-credentials", "vault.kdbx", "a.tfstate.backup", "secrets", "secrets/data", "mysecret.txt", "myCredentials.json", "kubeconfig.dev", ".aws/config", "app/.ssh/config", "x.example/a.key"]) expect(isSensitivePath(file)).toBe(true)
-    for (const file of [".env.example", ".env.local.sample", "app/.env.template", "app/main.ts", "app/monkey.ts", "templates/example.txt"]) expect(isSensitivePath(file)).toBe(false)
+    for (const file of [".env.example", ".env.local.sample", "app/.env.template", "app/main.ts", "app/monkey.ts", "src/auth/credentials.ts", "src/auth/secrets.ts", "templates/example.txt"]) expect(isSensitivePath(file)).toBe(false)
     expect(isSensitivePath("secrets/.env.example")).toBe(true)
   })
 
@@ -52,6 +52,15 @@ describe("content scanning", () => {
       expect(result.flags).toEqual(["credential-value"])
     }
     expect(scanText("token=short password=test api_key=example")).toEqual({ text: "token=short password=test api_key=example", flags: [] })
+  })
+
+  test("does not treat source expressions as embedded credentials", () => {
+    const source = [
+      "apiKey: process.env.OPENAI_API_KEY",
+      "token = generateToken(user.id)",
+      "password: hashPassword(input)",
+    ].join("\n")
+    expect(scanText(source)).toEqual({ text: source, flags: [] })
   })
 
   test("sanitizes structured artifacts without destroying JSON or changing input", () => {

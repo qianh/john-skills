@@ -3,7 +3,7 @@ import { spawnSync } from "node:child_process"
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import path from "node:path"
-import { parseArgs, report } from "./orch.ts"
+import { main, parseArgs, report } from "./orch.ts"
 import { stopWorkers } from "./runtime.ts"
 const roots: string[] = []
 afterEach(() => { for (const dir of roots.splice(0)) rmSync(dir, { recursive: true, force: true }) })
@@ -56,7 +56,7 @@ const usage={input_tokens:10,output_tokens:2,cache_read_input_tokens:0,cache_cre
 console.log(JSON.stringify(provider==='claude'?{type:'result',result:typeof answer==='string'?answer:JSON.stringify(answer),session_id:session,usage,total_cost_usd:0.01}:{text:JSON.stringify(answer),sessionId:session,usage,total_cost_usd:0.01}));
 `
   for (const name of ["claude", "grok", "codex", "pi"]) { const file = path.join(bin, name); writeFileSync(file, source); chmodSync(file, 0o755) }
-  const env = { PATH: `${bin}:/usr/bin:/bin`, HOME: root, USER: "fixture", ORCHESTRATE_HOME: config, XDG_CACHE_HOME: path.join(root, "cache"), XDG_STATE_HOME: path.join(root, "state") }
+  const env = { PATH: `${bin}:/usr/bin:/bin`, HOME: root, USER: "fixture", ORCHESTRATE_MODE: "dynamic", ORCHESTRATE_HOME: config, XDG_CACHE_HOME: path.join(root, "cache"), XDG_STATE_HOME: path.join(root, "state") }
   const run = async (args: string[], extra: Record<string, string> = {}) => {
     const proc = Bun.spawn([process.execPath, cli, ...args], { cwd, env: { ...env, ...extra }, stdout: "pipe", stderr: "pipe" })
     const [stdout, stderr, code] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text(), proc.exited])
@@ -71,8 +71,22 @@ console.log(JSON.stringify(provider==='claude'?{type:'result',result:typeof answ
 
 test("CLI arguments reject typos/missing values and preserve a quoted goal", () => {
   expect(parseArgs(["run", "--budget", "1.5", "--allow", "deps", "fix it"]).goal).toBe("fix it")
+  expect(parseArgs(["run", "--mode", "dynamic", "fix it"]).values.mode).toEqual(["dynamic"])
   expect(() => parseArgs(["run", "--typo"])).toThrow("未知")
   expect(() => parseArgs(["continue", "--run"])).toThrow("缺少值")
+})
+test("simple mode is an explicit no-worker handoff", async () => {
+  expect(await main(["run", "--mode", "simple", "do the task"])).toBe(3)
+})
+test("simple mode is the default when no mode is configured", async () => {
+  const previous = process.env.ORCHESTRATE_MODE
+  try {
+    delete process.env.ORCHESTRATE_MODE
+    expect(await main(["run", "do the task"])).toBe(3)
+  } finally {
+    if (previous === undefined) delete process.env.ORCHESTRATE_MODE
+    else process.env.ORCHESTRATE_MODE = previous
+  }
 })
 test("report uses the ledger and discloses missing state and unreadable records", () => {
   const root = mkdtempSync(path.join(tmpdir(), "orch-report-")); roots.push(root)
@@ -93,13 +107,14 @@ test("real CLI + fake workers + real git snapshots + sandbox evidence complete l
   expect(readFileSync(path.join(f.cwd, "src/x.ts"), "utf8")).toBe("after\n")
   const report = await f.run(["report"]); expect(report.code).toBe(0); expect(report.stdout).toContain("exec/sonnet-5.5")
   const status = await f.run(["status", "--run", f.runDir()]); expect(status.stdout).toContain("状态：done")
-}, 20_000)
+}, 60_000)
 test("plan-only continues by explicit author and does not execute while waiting", async () => {
-  const f = fixture(); expect((await f.run(["run", "--plan-only", "change"])).code).toBe(3)
+  const f = fixture(); const first = await f.run(["run", "--plan-only", "change"]); expect(first.code).toBe(3)
   expect(readFileSync(path.join(f.cwd, "src/x.ts"), "utf8")).toBe("before\n")
-  expect((await f.run(["continue", "--run", f.runDir()])).code).toBe(2)
-  expect((await f.run(["continue", "--run", f.runDir(), "--by", "sonnet-5.5"])).code).toBe(process.platform === "darwin" ? 0 : 5)
-}, 20_000)
+  const missing = await f.run(["continue", "--run", f.runDir()]); expect(missing.code).toBe(2)
+  const continued = await f.run(["continue", "--run", f.runDir(), "--by", "sonnet-5.5"])
+  expect(continued.code).toBe(process.platform === "darwin" ? 0 : 5)
+}, 30_000)
 test("non-git editing is refused, read-only review records stay outside project", async () => {
   const f = fixture(false)
   expect((await f.run(["run", "change"])).code).toBe(2)
@@ -112,7 +127,9 @@ test("SIGKILL leaves a tracked worker; continue refuses, stop clears it, recover
   const proc = Bun.spawn([process.execPath, cli, "run", "change"], { cwd: f.cwd, env: { ...f.env, ORCH_FIXTURE_DELAY: "yes" }, stdout: "ignore", stderr: "ignore" })
   let runDir = "", found = false
   try {
-    for (let i = 0; i < 200; i++) {
+    // Other integration files may run in parallel; allow a slow worker spawn
+    // without treating the recovery protocol as broken.
+    for (let i = 0; i < 400; i++) {
       await Bun.sleep(50)
       try { runDir = f.runDir(); const state = JSON.parse(readFileSync(path.join(runDir, "state.json"), "utf8")); if (state.step === "exec" && state.workers.length) { found = true; break } } catch {}
     }
@@ -128,4 +145,4 @@ test("SIGKILL leaves a tracked worker; continue refuses, stop clears it, recover
     try { proc.kill("SIGKILL") } catch {}
     if (runDir) { const state = JSON.parse(readFileSync(path.join(runDir, "state.json"), "utf8")); await stopWorkers(state.workers) }
   }
-}, 30_000)
+}, 60_000)

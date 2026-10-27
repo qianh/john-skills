@@ -46,7 +46,7 @@ describe("snapshot-evidenced flow", () => {
     expect(readFileSync(path.join(h.runDir, "exec-0.txt"), "utf8")).toBe("done")
     const state = h.state()
     expect(state.verifiedTree).toBe(state.current.tree); expect(state.reviewedTree).toBe(state.current.tree)
-    expect(result.summary).toContain("本次 token 按 opus 单价重算")
+    expect(result.summary).toContain("本次 token 按 opus-5.5 单价重算")
     expect(result.summary.split("\n").length).toBeLessThanOrEqual(30)
   })
   test("failed acceptance fixes before spending review tokens", async () => {
@@ -88,13 +88,13 @@ describe("snapshot-evidenced flow", () => {
     expect(h.calls.some((r) => r.role === "exec")).toBe(false)
     expect((await h.next()).ok).toBe(true)
   })
-  test("no independent reviewer hands off; same family main review cannot complete", async () => {
+  test("no independent reviewer hands off; main review can still complete the task", async () => {
     const h = harness(); h.config.routing.exec.pools.standard = [{ model: "sonnet-5.5", effort: "high" }]; h.config.routing.review.chain = [{ model: "opus-5.5", effort: "medium" }]
     expect((await h.run()).exitCode).toBe(3)
     const state = h.state(); expect(state.handoff?.type).toBe("review")
     writeFileSync(path.join(h.runDir, `review-${state.reviewRound}.json`), JSON.stringify({ p1: [], p2: [], criteria: [], out_of_scope: [], reviewed_tree: state.current.tree }))
     const result = await h.next()
-    expect(result.exitCode).toBe(5); expect(result.summary).toContain("独立性不足")
+    expect(result.exitCode).toBe(0); expect(result.summary).toContain("主控完成")
   })
   test("sonnet execution skips opus fallback and uses grok, with its own effort", async () => {
     const h = harness((req) => req.role === "review" && req.model.includes("gpt") ? new Error("model_not_found") : undefined)
@@ -213,7 +213,7 @@ describe("snapshot-evidenced flow", () => {
   })
   test("safety-blocked commands are pending validation, not repair attempts", async () => {
     const h = harness(); const result = await h.run({ runCommand: async () => ({ code: 125, stdout: "", stderr: "sandbox unavailable", blocked: true }) })
-    expect(result.exitCode).toBe(5); expect(h.state().fixes).toBe(0)
+    expect(result.exitCode).toBe(3); expect(h.state().handoff?.type).toBe("verify"); expect(h.state().fixes).toBe(0)
     expect(h.calls.some((r) => r.role === "review")).toBe(false)
   })
   test("readonly entry does not explore, plan or execute", async () => {

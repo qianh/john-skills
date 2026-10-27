@@ -15,7 +15,8 @@ export interface Worker { pid: number; pgid: number; startTime: string; command:
 interface ProcessInfo { pid: number; pgid: number; startTime: string; command: string }
 
 function processTable(): ProcessInfo[] {
-  const result = spawnSync("ps", ["-axo", "pid=,pgid=,lstart=,comm="], { encoding: "utf8" })
+  // `lstart` is localized by ps; force a stable English format before parsing it.
+  const result = spawnSync("ps", ["-axo", "pid=,pgid=,lstart=,comm="], { encoding: "utf8", env: { ...process.env, LC_ALL: "C" } })
   if (result.status !== 0 || result.error) throw new Error("无法确认旧 worker 身份：ps 失败，拒绝恢复")
   return result.stdout.split("\n").flatMap((line) => {
     const m = line.trim().match(/^(\d+)\s+(\d+)\s+(\w+\s+\w+\s+\d+\s+[\d:]+\s+\d+)\s+(.+)$/)

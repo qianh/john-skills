@@ -14,7 +14,7 @@ import { SnapshotManager, type Snapshot } from "./snapshot.ts"
 import { dependencyPath, missingPermissions, parseAllow, routeAdmission, verifyCommand, type VerificationOutput } from "./sandbox.ts"
 
 export type Step = "explore" | "plan" | "gate" | "exec" | "verify" | "review" | "fix" | "check" | "finalize"
-export type HandoffType = "plan" | "exec" | "fix" | "review" | "check" | "permission" | "budget"
+export type HandoffType = "plan" | "exec" | "fix" | "verify" | "review" | "check" | "permission" | "budget"
 export interface Session { alias: string; provider: StageRequest["provider"]; modelId: string; sessionId: string; securityProfile: string }
 export interface CallLog {
   role: Role; alias: string; provider: string; model: string; effort: string; requestedEffort: string
@@ -26,7 +26,7 @@ export interface SavedState {
   step: Step; startedAt: number; updatedAt: number; lastLog: string; fixes: number; reviewRound: number; tmpDir: string
   authors: { alias: string; family: string }[]; sessions: Partial<Record<Role, Session>>; selected: Partial<Record<Role, string>>; workers: Worker[]
   baseline: Snapshot; current: Snapshot; verifiedTree?: string; reviewedTree?: string; checksTree?: string
-  plan?: Plan; review?: Review; reviewerFamily?: string; p1: string[]; replacements: string[]; safetyFlags: string[]
+  plan?: Plan; review?: Review; reviewerFamily?: string; p1: string[]; replacements: string[]; safetyFlags: string[]; redactions?: string[]
   calls: CallLog[]; cumulativeCosts: Record<string, number>; allow: string[]; execPin?: string; planOnly: boolean
   budget?: number; maxCalls?: number; maxMinutes?: number; handoff?: { type: HandoffType; reason: string; tree: string }
   mode: "run" | "review"; dual: boolean; author?: string; base?: string; paths: string[]; reviewFamilies: string[]; reviewP1: string[]
@@ -83,15 +83,15 @@ export async function runFlow(o: FlowOptions): Promise<FlowOutcome> {
   const cache = o.cache ?? new UnavailableCache()
   let state: SavedState = o.resume ?? (() => {
     const baseline = workspace.captureBaseline()
-    return { version: 2, goal: o.goal, cwd: workspace.cwd, runDir: o.runDir, status: "running", step: o.mode === "review" ? "review" : "explore", startedAt: Date.now(), updatedAt: Date.now(), lastLog: "预检完成", fixes: 0, reviewRound: 1, tmpDir: commandTmp, authors: [], sessions: {}, selected: {}, workers: [], baseline, current: baseline, p1: [], replacements: [], safetyFlags: [], calls: [], cumulativeCosts: {}, allow: parseAllow(o.allow), execPin: o.execPin, planOnly: o.planOnly ?? false, budget: o.budget, maxCalls: o.maxCalls, maxMinutes: o.maxMinutes, mode: o.mode ?? "run", dual: o.dual ?? false, author: o.author, base: o.base, paths: o.paths ?? [], reviewFamilies: [], reviewP1: [] }
+    return { version: 2, goal: o.goal, cwd: workspace.cwd, runDir: o.runDir, status: "running", step: o.mode === "review" ? "review" : "explore", startedAt: Date.now(), updatedAt: Date.now(), lastLog: "预检完成", fixes: 0, reviewRound: 1, tmpDir: commandTmp, authors: [], sessions: {}, selected: {}, workers: [], baseline, current: baseline, p1: [], replacements: [], safetyFlags: [], redactions: [], calls: [], cumulativeCosts: {}, allow: parseAllow(o.allow), execPin: o.execPin, planOnly: o.planOnly ?? false, budget: o.budget, maxCalls: o.maxCalls, maxMinutes: o.maxMinutes, mode: o.mode ?? "run", dual: o.dual ?? false, author: o.author, base: o.base, paths: o.paths ?? [], reviewFamilies: [], reviewP1: [] }
   })()
   if (state.version !== 2) throw new Error("旧运行状态不兼容；请保留记录并新开运行")
-  const scan = (text: string): string => { const found = scanText(text); state.safetyFlags.push(...found.flags); state.safetyFlags = [...new Set(state.safetyFlags)]; return found.text }
+  const scan = (text: string): string => { const found = scanText(text); state.redactions = [...new Set([...(state.redactions ?? []), ...found.flags])]; return found.text }
   const write = (name: string, text: string) => atomicWrite(path.join(o.runDir, name), scan(text))
   const persist = () => {
     state.updatedAt = Date.now()
     const clean = sanitizeValue(state)
-    state.safetyFlags = [...new Set([...state.safetyFlags, ...clean.flags])]
+    state.redactions = [...new Set([...(state.redactions ?? []), ...clean.flags])]
     atomicJSON(path.join(o.runDir, "state.json"), { ...clean.value as SavedState, safetyFlags: state.safetyFlags })
     atomicWrite(path.join(o.runDir, "usage.jsonl"), state.calls.map((c) => JSON.stringify(sanitizeValue(c).value)).join("\n") + (state.calls.length ? "\n" : ""))
   }
@@ -176,7 +176,6 @@ export async function runFlow(o: FlowOptions): Promise<FlowOutcome> {
           const sandbox = row.provider === "grok" ? { profile: role === "exec" ? "workspace" : "read-only" } : row.provider === "claude" ? { settings: { sandbox: { enabled: true, allowUnsandboxedCommands: false, autoAllowBashIfSandboxed: true, filesystem: { allowWrite: role === "exec" ? [state.cwd, commandTmp] : [commandTmp], denyWrite: [workspace.gitDir, path.join(state.cwd, ".git")], denyRead: [...Object.keys(state.current.sensitive).map((f) => path.join(state.cwd, f)), ...credentialReadPaths("claude", o.config.safety.sensitiveExtra)] }, network: { allowedDomains: state.allow.includes("network:*") ? ["*"] : state.allow.filter((a) => a.startsWith("network:")).map((a) => a.slice(8)) } } } } : undefined
           const req: StageRequest = { provider: row.provider, role, model: row.modelId, effort, prompt: scan(fullPrompt), cwd: state.cwd, sessionId, resume, sessionDir: path.join(commandTmp, "pi-sessions"), schema, schemaPath: schema ? path.join(o.runDir, role === "plan" ? "plan.schema.json" : "review.schema.json") : undefined, timeoutMs: o.config.routing[role].timeoutMin * 60_000, securityProfile: profile, env: safeEnv(row.provider, o.config.safety.cliEnv[row.provider] ?? [], commandTmp), supportedEfforts: row.efforts ?? undefined, sandbox }
           log(`→ ${role} ${row.alias}/${row.provider} · ${effort}${resume ? "（续接）" : ""}`)
-          if (role === "exec") author(row.alias)
           const call: CallLog = { role, alias: row.alias, provider: row.provider, model: row.modelId, requestedEffort: position.effort, effort, sessionId, resume, ms: 0, usage: unknownUsage(), costSource: "unknown", result: "pending" }
           state.calls.push(call); persist()
           const started = Date.now()
@@ -212,12 +211,13 @@ export async function runFlow(o: FlowOptions): Promise<FlowOutcome> {
             halt(5, "只读阶段检测到工作区变化，停止推进并保留证据")
           }
           if (!error && result) {
+            if (role === "exec") author(row.alias)
             const kept: Session = { alias: row.alias, provider: row.provider, modelId: row.modelId, sessionId: result.sessionId ?? sessionId, securityProfile: profile }
             // An invented ID is not evidence that the CLI established a resumable session.
             if (result.sessionId) state.sessions[role] = kept
             state.selected[role] = row.alias
             result = { ...result, text: scan(result.text) }
-            if (result.structured !== undefined) { const clean = sanitizeValue(result.structured); result.structured = clean.value; state.safetyFlags.push(...clean.flags) }
+            if (result.structured !== undefined) { const clean = sanitizeValue(result.structured); result.structured = clean.value; state.redactions = [...new Set([...(state.redactions ?? []), ...clean.flags])] }
             if (attempted > 1 || position !== ordered[0]) state.replacements.push(`${role} 改用 ${row.alias}/${row.provider}：${brief(last)}`)
             persist(); return { result, session: kept }
           }
@@ -261,7 +261,14 @@ export async function runFlow(o: FlowOptions): Promise<FlowOutcome> {
   }
   function validateBudgetConfig(): void {
     if (state.budget === undefined || state.maxCalls !== undefined || state.maxMinutes !== undefined) return
-    const unpriced = o.config.models.filter((row) => row.price.input == null || row.price.output == null)
+    const configured = new Set<string>([
+      ...o.config.routing.explore.chain.map((item) => item.model),
+      ...o.config.routing.plan.chain.map((item) => item.model),
+      ...o.config.routing.review.chain.map((item) => item.model),
+      ...Object.values(o.config.routing.exec.pools).flat().map((item) => item.model),
+    ])
+    if (state.execPin) configured.add(state.execPin)
+    const unpriced = o.config.models.filter((row) => configured.has(row.alias) && (row.price.input == null || row.price.output == null))
     if (unpriced.length) halt(2, `--budget 不覆盖未知金额，须同时给 --max-calls 或 --max-minutes：${unpriced.map((r) => `${r.alias}/${r.provider}`).join(", ")}`)
   }
 
@@ -285,7 +292,7 @@ export async function runFlow(o: FlowOptions): Promise<FlowOutcome> {
       } else if (pending?.type === "plan") {
         try { state.plan = validatePlan(strictJSON(scan(artifact(path.join(o.runDir, "plan.json"))))); write("plan.md", planText()); step("gate") }
         catch (error) { handoff("plan", `交接方案无效：${brief(String(error))}`) }
-      } else if (pending?.type === "exec" || pending?.type === "fix") { step("verify") }
+      } else if (pending?.type === "exec" || pending?.type === "fix" || pending?.type === "verify") { step("verify") }
       else if (pending?.type === "permission") { state.planOnly = false; step("gate") }
       else if (pending?.type === "review") {
         try {
@@ -306,7 +313,7 @@ export async function runFlow(o: FlowOptions): Promise<FlowOutcome> {
           const checks = validateChecks(strictJSON(scan(artifact(path.join(o.runDir, "checks.json")))), state.plan!, state.current.tree)
           const failed = checks.checks.filter((c) => c.verdict === "fail")
           if (failed.length) scheduleFix(failed.map((c) => `${c.id}: ${c.evidence}`))
-          else if (checks.checks.some((c) => c.verdict === "unknown")) halt(5, "人工核验仍有 unknown")
+          else if (checks.checks.some((c) => c.verdict === "unknown")) handoff("check", "人工核验仍有 unknown；补充 evidence 后 continue")
           else { state.checksTree = state.current.tree; step("finalize") }
         } catch (error) { if (error instanceof Halt) throw error; handoff("check", `核验文件无效：${brief(String(error))}`) }
       } else {
@@ -364,13 +371,13 @@ export async function runFlow(o: FlowOptions): Promise<FlowOutcome> {
               if (remaining <= 0) handoff("budget", "验收前达到 max-minutes")
               const output = o.runCommand ? await o.runCommand(command, state.cwd) : await verifyCommand(command, { cwd: state.cwd, gitDir: workspace.gitDir, tmpDir: commandTmp, allow: state.allow, sensitiveExtra: o.config.safety.sensitiveExtra, sensitivePaths: Object.keys(state.current.sensitive), extraWritable: o.config.safety.extraWritable, verifyEnv: o.config.safety.verifyEnv, timeoutMs: Math.min(o.config.safety.verifyTimeoutMin * 60_000, remaining) }, hooks)
               if (interrupting) halt(4, "验收中断，停止后续命令")
-              output.stdout = scan(output.stdout).slice(-4000); output.stderr = scan(output.stderr).slice(-4000); state.safetyFlags.push(...(output.flags ?? []))
+              output.stdout = scan(output.stdout).slice(-4000); output.stderr = scan(output.stderr).slice(-4000); state.redactions = [...new Set([...(state.redactions ?? []), ...(output.flags ?? [])])]
               evidence.push({ id: criterion.id, command, tree, output }); blocked ||= output.blocked ?? false
               write("verify.json", JSON.stringify(evidence, null, 2)); write("verify.txt", evidence.map((e) => `${e.id} ${e.command} ${e.output.code === 0 ? "通过" : "失败"}（快照 ${e.tree}）\n${e.output.stdout}\n${e.output.stderr}`).join("\n\n"))
             }
           }
           capture()
-          if (blocked) halt(5, "验收受安全规则或沙箱可用性阻挡，未作为代码失败处理；见 verify.txt")
+          if (blocked) handoff("verify", "验收受安全规则或沙箱可用性阻挡，未作为代码失败处理；修复环境或授权后 continue")
           if (tree !== state.current.tree) { author("unknown-external"); halt(5, "验收期间工作区变化，证据快照已失效；请检查命令副作用") }
           const failed = evidence.filter((e) => e.output.code !== 0)
           if (failed.length) { scheduleFix(failed.map((e) => `${e.command} exit=${e.output.code}\n${e.output.stdout}\n${e.output.stderr}`)); break }
@@ -405,12 +412,13 @@ export async function runFlow(o: FlowOptions): Promise<FlowOutcome> {
           capture()
           if (state.mode === "review") {
             if (state.reviewedTree !== state.current.tree) halt(5, "只读审查快照过期")
-            if (state.reviewFamilies.some((f) => !independent(f, state.authors)) || (state.dual && new Set(state.reviewFamilies).size < 2)) halt(5, "只读审查独立性不足")
+            if (state.reviewFamilies.some((f) => !independent(f, state.authors))) state.replacements.push("只读审查由主控完成：没有可用的独立 reviewer")
+            if (state.dual && new Set(state.reviewFamilies).size < 2) state.replacements.push("双审未满足：第二份审查由主控补齐")
             if (state.p1.length) halt(1, "只读审查发现 P1，未自动修改文件")
           } else {
             if (!state.plan || !state.review || state.verifiedTree !== state.current.tree || state.reviewedTree !== state.current.tree) halt(5, "最终验收、审查与当前快照不一致")
             if (state.plan.criteria.some((c) => c.kind === "check") && state.checksTree !== state.current.tree) halt(5, "缺少最终快照的人工核验证据")
-            if (!independent(state.reviewerFamily ?? "unknown", state.authors)) halt(5, "审查独立性不足")
+            if (!independent(state.reviewerFamily ?? "unknown", state.authors)) state.replacements.push("最终审查由主控完成：没有可用的独立 reviewer")
             if (state.p1.length) halt(1, "存在未关闭 P1")
           }
           const changedDeps = scopePaths().filter(dependencyPath)
@@ -431,27 +439,30 @@ export async function runFlow(o: FlowOptions): Promise<FlowOutcome> {
   const names = ["完成", "卡住", "用法或配置错误", "交给主会话", "中断", "待验证"]
   const known = state.calls.reduce((sum, c) => sum + (c.usage.costUsd ?? 0), 0)
   const unknown = state.calls.filter((c) => c.usage.costUsd == null).length
-  const opus = o.config.models.find((r) => r.alias === "opus-5.5")?.price
-  const opusParts = opus ? state.calls.map((c) => costFromPrice(c.usage, opus)) : []
-  const opusTotal = opusParts.length && opusParts.every((n) => n != null) ? opusParts.reduce<number>((s, n) => s + n!, 0) : null
+  const referenceAlias = o.config.routing.plan.chain[0]?.model
+  const reference = referenceAlias ? o.config.models.find((r) => r.alias === referenceAlias)?.price : undefined
+  const referenceParts = reference ? state.calls.map((c) => costFromPrice(c.usage, reference)) : []
+  const referenceTotal = referenceParts.length && referenceParts.every((n) => n != null) ? referenceParts.reduce<number>((s, n) => s + n!, 0) : null
   let files: string[] = []
   try { files = scopePaths() } catch { /* Preserve the last evidence even when git fails. */ }
   const byRole = ["explore", "plan", "exec", "review"].map((role) => {
     const calls = state.calls.filter((c) => c.role === role)
     return calls.length ? `${role} $${calls.reduce((s, c) => s + (c.usage.costUsd ?? 0), 0).toFixed(4)}${calls.some((c) => c.costSource === "price") ? "（含估算）" : ""}` : ""
   }).filter(Boolean).join(" · ")
+  const mainReview = Boolean(state.review && !independent(state.reviewerFamily ?? "unknown", state.authors))
   const schema = handoffType === "plan" ? "plan" : handoffType === "review" ? "review" : handoffType === "check" ? "checks" : undefined
   const target = handoffType === "review" ? `review-${state.reviewRound}.json` : handoffType === "plan" ? "plan.json" : handoffType === "check" ? "checks.json" : "plan.md / verify.txt / 最新 review-N.json"
-  const next = handoffType ? `只做 ${handoffType}：${reason}；文件 ${path.join(o.runDir, target)}${schema ? `；schema ${path.join(o.runDir, `${schema}.schema.json`)}` : ""}；之后 bun ${JSON.stringify(path.join(import.meta.dir, "orch.ts"))} continue --run ${JSON.stringify(o.runDir)} --by <主会话能力名>${handoffType === "permission" ? " [--allow 用户批准的类别]" : handoffType === "budget" ? " [新的 --budget/--max-calls/--max-minutes]" : ""}` : exitCode === 4 ? `确认旧 worker 停止后 continue --run ${JSON.stringify(o.runDir)} --by <主会话能力名>` : reason
+  const next = handoffType ? `只做 ${handoffType}：${reason}；文件 ${path.join(o.runDir, target)}${schema ? `；schema ${path.join(o.runDir, `${schema}.schema.json`)}` : ""}；之后 bun ${JSON.stringify(path.join(import.meta.dir, "orch.ts"))} continue --mode dynamic --run ${JSON.stringify(o.runDir)} --by <主会话能力名>${handoffType === "permission" ? " [--allow 用户批准的类别]" : handoffType === "budget" ? " [新的 --budget/--max-calls/--max-minutes]" : ""}` : exitCode === 4 ? `确认旧 worker 停止后 continue --mode dynamic --run ${JSON.stringify(o.runDir)} --by <主会话能力名>` : reason
   const summary = scan([
     `结论：${names[exitCode]}${state.mode === "review" ? "（只读审查）" : ""}`,
     `阵容：${["plan", "exec", "review"].map((r) => `${r} ${state.selected[r as Role] ?? "主会话/无"}`).join(" · ")}（替换/跳过 ${state.replacements.length} 项，见 routing-log.json）`,
     `改动：${files.length} 个文件 ${files.slice(0, 12).join(", ")}${files.length > 12 ? "…" : ""}；与已有修改重叠 ${files.filter((f) => state.baseline.preexisting.includes(f)).length} 个`,
     `完成标准：命令 ${state.verifiedTree ? "已复核" : "未复核"}；人工核验 ${state.checksTree ? "有证据" : "无/未做"}；最终快照 ${state.current.tree.slice(0, 12)}`,
-    `审查：修复 ${state.fixes} 轮；P1 未关闭 ${state.p1.length}；P2 ${state.review?.p2.length ?? 0}${state.mode === "review" && !state.author ? "；未提供 author，没有作者独立性保证" : ""}`,
-    `安全：${state.safetyFlags.length ? state.safetyFlags.map((s) => brief(s, 90)).slice(0, 5).join("；") : "无标记"}`,
+    `审查：修复 ${state.fixes} 轮；P1 未关闭 ${state.p1.length}；P2 ${state.review?.p2.length ?? 0}${mainReview ? "；主控完成（无独立 reviewer）" : ""}${state.mode === "review" && !state.author ? "；未提供 author，没有作者独立性保证" : ""}`,
+    `安全：${state.safetyFlags.length ? state.safetyFlags.map((s) => brief(s, 90)).slice(0, 5).join("；") : "无阻断标记"}`,
+    `脱敏：${state.redactions?.length ? state.redactions.join("、") : "无"}`,
     `边界：unsafe_read=${o.config.safety.unsafeRead.join(",") || "无"}；unsafe_exec=${o.config.safety.unsafeExec.join(",") || "无"}${o.config.safety.unsafeRead.length || o.config.safety.unsafeExec.length ? "（显式例外，外壳隔离未验证）" : ""}；${state.allow.includes("network:*") ? "网络获准全出站，发布/推送剩下授权和凭证约束，不保证物理隔离" : state.allow.some((a) => a.startsWith("network:")) ? "仅域名联网授权；验收沙箱及未实测层仍禁网" : "网络未授权"}`,
-    `账单：${byRole || "无调用"} · 合计 ${unknown ? "≥ " : ""}$${known.toFixed(4)}（${unknown} 次未报价；CLI 报价/价格估算，非账单）${opusTotal == null ? "" : `；本次 token 按 opus 单价重算约 $${opusTotal.toFixed(4)}（估算）`}`,
+    `账单：${byRole || "无调用"} · 合计 ${unknown ? "≥ " : ""}$${known.toFixed(4)}（${unknown} 次未报价；CLI 报价/价格估算，非账单）${referenceTotal == null || !referenceAlias ? "" : `；本次 token 按 ${referenceAlias} 单价重算约 $${referenceTotal.toFixed(4)}（估算）`}`,
     `下一步：${next}`,
     `记录：${o.runDir}（summary.md · plan.md · review-N.json · verify.txt · usage.jsonl）`,
     ...(o.config.usingSample ? ["配置：使用 skill 示例，未宣称本机路由已验证"] : []),

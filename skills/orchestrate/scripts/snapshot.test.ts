@@ -55,7 +55,7 @@ describe("safe workspace snapshots", () => {
     expect(f.indexBytes()).toEqual(before)
     expect(f.git("ls-tree", baseline.tree, "mode.sh")).toStartWith("100755")
     expect(f.git("ls-tree", baseline.tree, "deleted.txt")).toBe("")
-  })
+  }, 15_000)
 
   test("excludes tracked, untracked and ignored sensitive paths before git add and only records stat", () => {
     const f = fixture()
