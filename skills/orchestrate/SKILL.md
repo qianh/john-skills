@@ -1,6 +1,6 @@
 ---
 name: orchestrate
-description: 多模型调度。默认使用简单模式（主控模型一路完成），显式开启后才使用动态路由模式（探索、方案、执行、验收、审查和修复）；小活由主控自己做。支持只出方案、只读审查、检查点恢复和诚实记账。当用户输入 /orchestrate、说“调度/编排多个模型”“让不同模型分工”“用 orch 跑这个任务”时触发。
+description: 多模型调度。默认使用简单模式（主控模型一路完成），显式开启后才使用动态路由模式（探索、方案、执行、验收、审查和修复）；小活由主控自己做。支持只出方案、只读审查、检查点恢复和诚实记账。配置模型时运行 orch.ts config，在本机页面里从已发现的模型中选择。当用户输入 /orchestrate、说“调度/编排多个模型”“让不同模型分工”“用 orch 跑这个任务”或要可视化配置模型路由时触发。
 ---
 
 # Orchestrate
@@ -11,7 +11,7 @@ description: 多模型调度。默认使用简单模式（主控模型一路完�
 
 两种模式是**任务级互斥开关**，一次任务开始后不在中途切换：
 
-- **简单模式（`simple`）**：不开启动态路由，不调用 `orch.ts`，不启动外部 worker，也不读取路由配置。主控模型从理解、方案、实现、验收、复核到汇报一路完成；仍遵守项目规则、权限确认、敏感信息和不擅自 commit/push 等红线。简单模式没有独立 reviewer，主控必须把自审和测试结果明确标为主控证据。
+- **简单模式（`simple`）**：不开启动态路由，不调用 `orch.ts` 执行任务，不启动外部 worker，也不读取路由配置。主控模型从理解、方案、实现、验收、复核到汇报一路完成；仍遵守项目规则、权限确认、敏感信息和不擅自 commit/push 等红线。简单模式没有独立 reviewer，主控必须把自审和测试结果明确标为主控证据。
 - **动态路由模式（`dynamic`）**：使用本页下面的 `orch.ts` 流程，由配置决定各阶段模型、外壳、思考档位、预算和恢复策略。
 
 选择优先级：用户本次明确指定（“简单模式”/“simple”、或“动态路由”/“dynamic”/“让不同模型分工”） > `ORCHESTRATE_MODE` 环境变量 > 默认 `simple`。环境变量只能取 `simple` 或 `dynamic`；出现其他值时先报配置错误，不要猜测。用户只说 `/orchestrate` 时走原有主控模型路径，默认使用 `simple`；只有明确要求动态路由、多模型分工，或显式设置 `ORCHESTRATE_MODE=dynamic` 才启动多模型流程。
@@ -109,7 +109,10 @@ rtk proxy ~/.bun/bin/bun "${CLAUDE_SKILL_DIR}/scripts/orch.ts" status --run "<�
 
 执行池只由有效方案的 `exec_type` 选择；旧 `default_pool` 仅兼容读取，新示例和配置提案不再生成该字段。
 
+可视化配置不手改文件。`orch.ts config`（等同 `config.sh ui`）只绑定 127.0.0.1，打开本机页面；候选只来自本机已登录 CLI 的模型列表，以及 Claude 本机模型目录 `~/.claude/cache/model-catalog`。勾选模型、排列探索/方案/审查/三个执行池后保存，写入上述两个文件并先备份。未入能力目录的本机模型可以选用，家族记为外壳名。此命令不启动动态路由，也不改 `[safety]` 准入。
+
 ```bash
+rtk proxy ~/.bun/bin/bun "${CLAUDE_SKILL_DIR}/scripts/orch.ts" config
 rtk proxy "${CLAUDE_SKILL_DIR}/scripts/config.sh" preflight
 rtk proxy "${CLAUDE_SKILL_DIR}/scripts/config.sh" init --propose
 # 审阅提案；确认后才 --apply，现有配置先备份

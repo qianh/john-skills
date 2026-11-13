@@ -203,6 +203,21 @@ export async function configMain(args = process.argv.slice(2)): Promise<number> 
   const [command, ...rest] = args
   const dir = configDir()
   if (["where", "detect", "preflight"].includes(command) && rest.length) throw new Error(`${command} 不接受额外参数`)
+  if (command === "ui") {
+    let open = true
+    let port: number | undefined
+    for (let i = 0; i < rest.length; i++) {
+      if (rest[i] === "--no-open") { open = false; continue }
+      if (rest[i] === "--port") {
+        const { portNumber } = await import("./config-ui.ts")
+        port = portNumber(rest[++i]); continue
+      }
+      throw new Error("ui 只接受 --port 和 --no-open")
+    }
+    const { serveUntilStopped } = await import("./config-ui.ts")
+    await serveUntilStopped({ dir, port, open })
+    return 0
+  }
   if (command === "where") { print(dir); return 0 }
   if (command === "detect") {
     for (const host of await discover()) print(`${host.provider}\t${host.installed ? "已安装" : "未安装"}\t${host.loggedIn ? "已登录" : "未登录"}${host.ids.length ? "\n" + host.ids.join("\n") : ""}`)
@@ -247,7 +262,7 @@ export async function configMain(args = process.argv.slice(2)): Promise<number> 
     print("真实隔离需要单独授权并覆盖五层边界、CLI 版本、工具子进程、认证变量及读取限制；--confirm-paid 不会代替这些证据。")
     return 5
   }
-  throw new Error("用法：config.sh where|detect|preflight|check [--sample]|init --propose/--apply|efforts [--sample]|probe [能力@provider] --confirm-paid|isolation <provider|verify>|cache clear")
+  throw new Error("用法：config.sh where|detect|preflight|check [--sample]|init --propose/--apply|ui [--port N] [--no-open]|efforts [--sample]|probe [能力@provider] --confirm-paid|isolation <provider|verify>|cache clear")
 }
 
 if (import.meta.main) {

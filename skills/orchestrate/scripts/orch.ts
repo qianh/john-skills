@@ -2,7 +2,7 @@ import { spawnSync } from "node:child_process"
 import { existsSync, mkdirSync, readFileSync, readdirSync } from "node:fs"
 import { homedir } from "node:os"
 import path from "node:path"
-import { loadConfig, resolveConfigDir, validateActor, validateExecPin } from "./config.ts"
+import { configDir, loadConfig, resolveConfigDir, validateActor, validateExecPin } from "./config.ts"
 import { strictJSON } from "./contracts.ts"
 import { DirectoryWorkspace } from "./directory-workspace.ts"
 import { continueFlow, runFlow, type FlowOptions, type SavedState } from "./flow.ts"
@@ -13,8 +13,8 @@ import { parseAllow } from "./sandbox.ts"
 import { SnapshotManager } from "./snapshot.ts"
 
 interface Args { command: string; goal: string; values: Record<string, string[]>; flags: Set<string> }
-const values = new Set(["cwd", "exec", "allow", "budget", "max-calls", "max-minutes", "run", "by", "base", "paths", "author", "root", "mode"])
-const flags = new Set(["sample", "plan-only", "dual", "help"])
+const values = new Set(["cwd", "exec", "allow", "budget", "max-calls", "max-minutes", "run", "by", "base", "paths", "author", "root", "mode", "port"])
+const flags = new Set(["sample", "plan-only", "dual", "help", "no-open"])
 export function parseArgs(argv: string[]): Args {
   const result: Args = { command: argv[0] ?? "help", goal: "", values: {}, flags: new Set() }
   const goals: string[] = []
@@ -100,11 +100,20 @@ const USAGE = `用法：
   orch.ts review --mode dynamic [--base REF] [--paths GLOB] [--author 能力] [--dual] "目标"
   orch.ts continue --mode dynamic --run DIR --by 能力 [--allow 用户批准的类别] [预算上限]
   orch.ts status --run DIR | stop --run DIR | report [--root DIR] | preflight
-默认模式是 simple；本脚本只有显式 dynamic 或 ORCHESTRATE_MODE=dynamic 才会调用外部 worker。默认严格隔离；未实测的路由不自动调用。--sample 显式使用示例配置。`
+  orch.ts config [--port N] [--no-open]
+默认模式是 simple；本脚本只有显式 dynamic 或 ORCHESTRATE_MODE=dynamic 才会调用外部 worker。config 打开本机页面，只从本机已发现的模型里配置。默认严格隔离；未实测的路由不自动调用。--sample 显式使用示例配置。`
+async function openConfig(args: Args): Promise<number> {
+  if (args.goal) throw new Error("config 不接受目标")
+  const { portNumber, serveUntilStopped } = await import("./config-ui.ts")
+  await serveUntilStopped({ dir: configDir(), port: portNumber(value(args, "port")), open: !args.flags.has("no-open") })
+  return 0
+}
 export async function main(argv = process.argv.slice(2)): Promise<number> {
   const args = parseArgs(argv)
-  const mode = routingMode(args)
+  if ((args.flags.has("no-open") || args.values.port) && args.command !== "config") throw new Error("--port 与 --no-open 只用于 config")
   if (args.command === "help" || args.flags.has("help")) { console.log(USAGE); return 0 }
+  if (args.command === "config") return openConfig(args)
+  const mode = routingMode(args)
   if (args.command === "preflight") {
     for (const host of await detectHosts()) console.log(`${host.provider}\t${host.installed ? "已安装" : "未安装"}\t${host.loggedIn ? "已登录" : "未登录"}`)
     return 0

@@ -73,7 +73,12 @@ test("CLI arguments reject typos/missing values and preserve a quoted goal", () 
   expect(parseArgs(["run", "--budget", "1.5", "--allow", "deps", "fix it"]).goal).toBe("fix it")
   expect(parseArgs(["run", "--mode", "dynamic", "fix it"]).values.mode).toEqual(["dynamic"])
   expect(() => parseArgs(["run", "--typo"])).toThrow("未知")
+  expect(parseArgs(["config", "--no-open", "--port", "0"]).flags.has("no-open")).toBe(true)
+  expect(parseArgs(["config", "--port", "0"]).values.port).toEqual(["0"])
   expect(() => parseArgs(["continue", "--run"])).toThrow("缺少值")
+})
+test("config flags stay on the config command", async () => {
+  await expect(main(["run", "--no-open", "task"])).rejects.toThrow("no-open")
 })
 test("simple mode is an explicit no-worker handoff", async () => {
   expect(await main(["run", "--mode", "simple", "do the task"])).toBe(3)
